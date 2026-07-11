@@ -1,0 +1,12 @@
+[package]
+name = "cdoc2"
+version = "0.0.0"
+edition = "2024"
+description = "CDOC2 encrypted document containers"
+license = "Apache-2.0"
+homepage = "https://github.com/takakv/cdoc2"
+repository = "https://github.com/takakv/cdoc2"
+keywords = ["cdoc2", "cdoc", "encryption", "eid", "estonia"]
+categories = ["cryptography"]
+
+[dependencies]
