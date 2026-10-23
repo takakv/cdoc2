@@ -8,7 +8,7 @@ Rust implementation of the CDOC2 client.
 
 ```
 flatc --rust --rust-module-root-file \
-    --gen-all -o src/header/generated schema/header.fbs
+    --gen-all -o cdoc2/src/header/generated cdoc2/schema/header.fbs
 ```
 
 ## License
