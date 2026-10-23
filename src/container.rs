@@ -1,9 +1,14 @@
+use hmac::{KeyInit, Mac};
+
+use crate::crypto::{FMK_LEN, Hkdf, Hmac};
+use crate::decrypt::DecryptError;
 use crate::header::{Header, HeaderError};
 
 const PRELUDE: &[u8; 4] = b"CDOC";
 const VERSION: u8 = 2;
 const MAX_HEADER_LEN: usize = 1 << 20;
 const HMAC_LEN: usize = 32;
+const HHK_LEN: usize = 32;
 
 #[derive(Debug, Clone)]
 pub struct Container<'a> {
@@ -62,4 +67,22 @@ impl<'a> Container<'a> {
             payload,
         })
     }
+}
+
+impl Container<'_> {
+    pub fn verify_header_hmac(&self, fmk: &[u8; FMK_LEN]) -> Result<(), DecryptError> {
+        let hhk = derive_hhk(fmk);
+        let mut mac = Hmac::new_from_slice(&hhk).expect("HMAC should accept keys of any size");
+        mac.update(self.header_bytes);
+        mac.verify_slice(self.header_hmac)
+            .map_err(|_| DecryptError::HmacMismatch)
+    }
+}
+
+fn derive_hhk(fmk: &[u8; FMK_LEN]) -> [u8; HHK_LEN] {
+    let mut hhk = [0u8; HHK_LEN];
+    let hk = Hkdf::from_prk(fmk).expect("FMK should be long enough to be an HKDF PRK");
+    hk.expand(b"CDOC20hmac", &mut hhk)
+        .expect("HHK should be short enough for HKDF-Expand");
+    hhk
 }
