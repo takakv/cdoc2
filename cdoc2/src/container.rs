@@ -72,14 +72,10 @@ impl<'a> Container<'a> {
             payload,
         })
     }
-}
 
-impl Container<'_> {
     pub fn verify_header_hmac(&self, fmk: &[u8; FMK_LEN]) -> Result<(), DecryptError> {
-        let hhk = derive_hhk(fmk);
-        let mut mac = Hmac::new_from_slice(&hhk).expect("HMAC should accept keys of any size");
-        mac.update(self.header_bytes);
-        mac.verify_slice(self.header_hmac)
+        header_mac(fmk, self.header_bytes)
+            .verify_slice(self.header_hmac)
             .map_err(|_| DecryptError::HmacMismatch)
     }
 
@@ -94,32 +90,85 @@ impl Container<'_> {
             return Err(DecryptError::PayloadTooShort);
         }
 
-        let aad = [
-            b"CDOC20payload".as_slice(),
-            self.header_bytes,
-            self.header_hmac.as_slice(),
-        ]
-        .concat();
-
-        let cek = Key::from(derive_cek(fmk));
-        let cipher = ChaCha20Poly1305::new(&cek);
-
+        let cipher = payload_cipher(fmk);
         let (nonce, ciphertext) = self
             .payload
             .split_first_chunk::<NONCE_LEN>()
             .ok_or(DecryptError::PayloadTooShort)?;
-        let nonce = Nonce::from(*nonce);
 
         cipher
             .decrypt(
-                &nonce,
+                &Nonce::from(*nonce),
                 Payload {
                     msg: ciphertext,
-                    aad: &aad,
+                    aad: &payload_aad(self.header_bytes, self.header_hmac),
                 },
             )
             .map_err(|_| DecryptError::PayloadDecryptionFailed)
     }
+}
+
+fn header_mac(fmk: &[u8; FMK_LEN], header_bytes: &[u8]) -> Hmac {
+    let hhk = derive_hhk(fmk);
+    let mut mac = Hmac::new_from_slice(&hhk).expect("HMAC should accept keys of any size");
+    mac.update(header_bytes);
+    mac
+}
+
+pub(crate) fn compute_header_hmac(fmk: &[u8; FMK_LEN], header_bytes: &[u8]) -> [u8; HMAC_LEN] {
+    header_mac(fmk, header_bytes).finalize().into_bytes().into()
+}
+
+fn payload_cipher(fmk: &[u8; FMK_LEN]) -> ChaCha20Poly1305 {
+    ChaCha20Poly1305::new(&Key::from(derive_cek(fmk)))
+}
+
+fn payload_aad(header_bytes: &[u8], header_hmac: &[u8; HMAC_LEN]) -> Vec<u8> {
+    [
+        b"CDOC20payload".as_slice(),
+        header_bytes,
+        header_hmac.as_slice(),
+    ]
+    .concat()
+}
+
+pub(crate) fn encrypt_payload(
+    fmk: &[u8; FMK_LEN],
+    header_bytes: &[u8],
+    header_hmac: &[u8; HMAC_LEN],
+    nonce: &[u8; NONCE_LEN],
+    plaintext: &[u8],
+) -> Result<Vec<u8>, chacha20poly1305::Error> {
+    let ciphertext = payload_cipher(fmk).encrypt(
+        &Nonce::from(*nonce),
+        Payload {
+            msg: plaintext,
+            aad: &payload_aad(header_bytes, header_hmac),
+        },
+    )?;
+    Ok([nonce.as_slice(), &ciphertext].concat())
+}
+
+pub(crate) fn write_container(
+    header_bytes: &[u8],
+    header_hmac: &[u8; HMAC_LEN],
+    payload: &[u8],
+) -> Result<Vec<u8>, ContainerError> {
+    if header_bytes.len() > MAX_HEADER_LEN {
+        return Err(ContainerError::InvalidHeaderLength);
+    }
+    let header_len =
+        i32::try_from(header_bytes.len()).expect("MAX_HEADER_LEN should fit in an i32");
+
+    let parts: [&[u8]; 6] = [
+        PRELUDE,
+        &[VERSION],
+        &header_len.to_be_bytes(),
+        header_bytes,
+        header_hmac,
+        payload,
+    ];
+    Ok(parts.concat())
 }
 
 fn derive_hhk(fmk: &[u8; FMK_LEN]) -> [u8; HHK_LEN] {
