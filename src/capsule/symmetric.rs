@@ -21,3 +21,16 @@ impl SymmetricKeyCapsule {
         kek
     }
 }
+
+fn xor(a: &[u8; FMK_LEN], b: &[u8; FMK_LEN]) -> [u8; FMK_LEN] {
+    std::array::from_fn(|i| a[i] ^ b[i])
+}
+
+pub fn encrypt_fmk(fmk: &[u8; FMK_LEN], kek: &[u8; FMK_LEN]) -> [u8; FMK_LEN] {
+    xor(fmk, kek)
+}
+
+pub fn decrypt_fmk(encrypted_fmk: &[u8], kek: &[u8; FMK_LEN]) -> Option<[u8; FMK_LEN]> {
+    let encrypted_fmk: &[u8; FMK_LEN] = encrypted_fmk.try_into().ok()?;
+    Some(xor(encrypted_fmk, kek))
+}
