@@ -11,3 +11,4 @@ categories = ["cryptography"]
 
 [dependencies]
 flatbuffers = "25.12.19"
+thiserror = "2.0.21"
