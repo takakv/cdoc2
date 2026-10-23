@@ -1,0 +1,17 @@
+[package]
+name = "cdoc2-cli"
+version = "0.0.0"
+description = "Command-line tool for CDOC2 encrypted document containers"
+keywords = ["cdoc2", "cdoc", "encryption", "eid", "estonia"]
+categories = ["cryptography", "command-line-utilities"]
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "cdoc2"
+path = "src/main.rs"
+
+[dependencies]
+cdoc2 = { path = "../cdoc2", version = "0.0.0" }
