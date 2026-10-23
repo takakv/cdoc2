@@ -10,3 +10,4 @@ keywords = ["cdoc2", "cdoc", "encryption", "eid", "estonia"]
 categories = ["cryptography"]
 
 [dependencies]
+flatbuffers = "25.12.19"
