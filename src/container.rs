@@ -1,14 +1,19 @@
+use chacha20poly1305::aead::{Aead, Payload};
+use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 use hmac::{KeyInit, Mac};
 
 use crate::crypto::{FMK_LEN, Hkdf, Hmac};
 use crate::decrypt::DecryptError;
-use crate::header::{Header, HeaderError};
+use crate::header::{Header, HeaderError, PayloadEncryptionMethod};
 
 const PRELUDE: &[u8; 4] = b"CDOC";
 const VERSION: u8 = 2;
 const MAX_HEADER_LEN: usize = 1 << 20;
 const HMAC_LEN: usize = 32;
 const HHK_LEN: usize = 32;
+const CEK_LEN: usize = 32;
+const NONCE_LEN: usize = 12;
+const TAG_LEN: usize = 16;
 
 #[derive(Debug, Clone)]
 pub struct Container<'a> {
@@ -77,12 +82,58 @@ impl Container<'_> {
         mac.verify_slice(self.header_hmac)
             .map_err(|_| DecryptError::HmacMismatch)
     }
+
+    pub fn decrypt_payload(&self, fmk: &[u8; FMK_LEN]) -> Result<Vec<u8>, DecryptError> {
+        if self.header.payload_encryption_method != PayloadEncryptionMethod::ChaCha20Poly1305 {
+            return Err(DecryptError::UnsupportedPayloadEncryptionMethod);
+        }
+
+        self.verify_header_hmac(fmk)?;
+
+        if self.payload.len() < NONCE_LEN + TAG_LEN {
+            return Err(DecryptError::PayloadTooShort);
+        }
+
+        let aad = [
+            b"CDOC20payload".as_slice(),
+            self.header_bytes,
+            self.header_hmac.as_slice(),
+        ]
+        .concat();
+
+        let cek = Key::from(derive_cek(fmk));
+        let cipher = ChaCha20Poly1305::new(&cek);
+
+        let (nonce, ciphertext) = self
+            .payload
+            .split_first_chunk::<NONCE_LEN>()
+            .ok_or(DecryptError::PayloadTooShort)?;
+        let nonce = Nonce::from(*nonce);
+
+        cipher
+            .decrypt(
+                &nonce,
+                Payload {
+                    msg: ciphertext,
+                    aad: &aad,
+                },
+            )
+            .map_err(|_| DecryptError::PayloadDecryptionFailed)
+    }
 }
 
 fn derive_hhk(fmk: &[u8; FMK_LEN]) -> [u8; HHK_LEN] {
-    let mut hhk = [0u8; HHK_LEN];
+    expand_fmk(fmk, b"CDOC20hmac")
+}
+
+fn derive_cek(fmk: &[u8; FMK_LEN]) -> [u8; CEK_LEN] {
+    expand_fmk(fmk, b"CDOC20cek")
+}
+
+fn expand_fmk<const N: usize>(fmk: &[u8; FMK_LEN], info: &[u8]) -> [u8; N] {
+    let mut key = [0u8; N];
     let hk = Hkdf::from_prk(fmk).expect("FMK should be long enough to be an HKDF PRK");
-    hk.expand(b"CDOC20hmac", &mut hhk)
-        .expect("HHK should be short enough for HKDF-Expand");
-    hhk
+    hk.expand(info, &mut key)
+        .expect("key should be short enough for HKDF-Expand");
+    key
 }

@@ -6,4 +6,10 @@ pub enum DecryptError {
     InvalidEncryptedFmkLength(usize),
     #[error("header HMAC mismatch: wrong key or corrupted file")]
     HmacMismatch,
+    #[error("unsupported payload encryption method")]
+    UnsupportedPayloadEncryptionMethod,
+    #[error("payload is too short")]
+    PayloadTooShort,
+    #[error("payload decryption failed: corrupted or tampered payload")]
+    PayloadDecryptionFailed,
 }
