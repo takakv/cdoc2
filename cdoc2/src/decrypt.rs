@@ -24,60 +24,46 @@ pub enum DecryptError {
     Unpack(#[from] UnpackError),
 }
 
-pub fn decrypt_with_symmetric_key(
+#[derive(Clone, Copy)]
+#[non_exhaustive]
+pub enum DecryptionKey<'a> {
+    Symmetric(&'a [u8]),
+    Password(&'a str),
+    EcSecretKey(&'a EcSecretKey),
+    EcdhSharedSecret(&'a [u8]),
+}
+
+pub fn decrypt(
     container: &Container,
     record: &RecipientRecord,
-    key: &[u8],
+    key: &DecryptionKey,
     max_size: u64,
 ) -> Result<Vec<File>, DecryptError> {
-    let Capsule::Symmetric(capsule) = &record.capsule else {
-        return Err(DecryptError::KeyTypeMismatch);
-    };
-    check_encryption_methods(container, record)?;
-    let kek = capsule.derive_kek(key, &record.key_label);
+    let kek = derive_kek(container, record, key)?;
     decrypt_with_kek(container, record, &kek, max_size)
 }
 
-pub fn decrypt_with_password(
+fn derive_kek(
     container: &Container,
     record: &RecipientRecord,
-    password: &str,
-    max_size: u64,
-) -> Result<Vec<File>, DecryptError> {
-    let Capsule::Password(capsule) = &record.capsule else {
-        return Err(DecryptError::KeyTypeMismatch);
-    };
+    key: &DecryptionKey,
+) -> Result<[u8; FMK_LEN], DecryptError> {
     check_encryption_methods(container, record)?;
-    let kek = capsule.derive_kek(password, &record.key_label);
-    decrypt_with_kek(container, record, &kek, max_size)
-}
-
-pub fn decrypt_with_ec_key(
-    container: &Container,
-    record: &RecipientRecord,
-    secret_key: &EcSecretKey,
-    max_size: u64,
-) -> Result<Vec<File>, DecryptError> {
-    let Capsule::Ecc(capsule) = &record.capsule else {
-        return Err(DecryptError::KeyTypeMismatch);
-    };
-    check_encryption_methods(container, record)?;
-    let kek = capsule.derive_kek(secret_key)?;
-    decrypt_with_kek(container, record, &kek, max_size)
-}
-
-pub fn decrypt_with_shared_secret(
-    container: &Container,
-    record: &RecipientRecord,
-    shared_secret: &[u8],
-    max_size: u64,
-) -> Result<Vec<File>, DecryptError> {
-    let Capsule::Ecc(capsule) = &record.capsule else {
-        return Err(DecryptError::KeyTypeMismatch);
-    };
-    check_encryption_methods(container, record)?;
-    let kek = capsule.derive_kek_from_shared_secret(shared_secret)?;
-    decrypt_with_kek(container, record, &kek, max_size)
+    match (&record.capsule, *key) {
+        (Capsule::Symmetric(capsule), DecryptionKey::Symmetric(key)) => {
+            Ok(capsule.derive_kek(key, &record.key_label))
+        }
+        (Capsule::Password(capsule), DecryptionKey::Password(password)) => {
+            Ok(capsule.derive_kek(password, &record.key_label))
+        }
+        (Capsule::Ecc(capsule), DecryptionKey::EcSecretKey(secret_key)) => {
+            Ok(capsule.derive_kek(secret_key)?)
+        }
+        (Capsule::Ecc(capsule), DecryptionKey::EcdhSharedSecret(shared_secret)) => {
+            Ok(capsule.derive_kek_from_shared_secret(shared_secret)?)
+        }
+        _ => Err(DecryptError::KeyTypeMismatch),
+    }
 }
 
 fn check_encryption_methods(
