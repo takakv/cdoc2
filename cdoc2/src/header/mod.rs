@@ -2,9 +2,10 @@
 #[rustfmt::skip]
 mod generated;
 
-use flatbuffers::{FlatBufferBuilder, WIPOffset};
+use flatbuffers::{FlatBufferBuilder, UnionWIPOffset, WIPOffset};
 
 use crate::capsule::Capsule;
+use crate::capsule::password::Pbkdf2Capsule;
 use crate::capsule::symmetric::SymmetricKeyCapsule;
 use generated::ee::cyber::cdoc_2::fbs::header as fb;
 use generated::ee::cyber::cdoc_2::fbs::recipients as fb_rec;
@@ -106,11 +107,14 @@ impl Header {
 
 impl RecipientRecord {
     fn from_fb(record: fb::RecipientRecord<'_>) -> RecipientRecord {
-        let capsule = match record.capsule_as_recipients_symmetric_key_capsule() {
-            Some(c) => Capsule::Symmetric(SymmetricKeyCapsule {
+        let capsule = if let Some(c) = record.capsule_as_recipients_symmetric_key_capsule() {
+            Capsule::Symmetric(SymmetricKeyCapsule {
                 salt: c.salt().bytes().to_vec(),
-            }),
-            None => Capsule::Unsupported,
+            })
+        } else if let Some(c) = record.capsule_as_recipients_pbkdf2_capsule() {
+            password_capsule_from_fb(c)
+        } else {
+            Capsule::Unsupported
         };
 
         let fmk_encryption_method = match record.fmk_encryption_method() {
@@ -142,6 +146,7 @@ impl RecipientRecord {
                     capsule.as_union_value(),
                 )
             }
+            Capsule::Password(c) => password_capsule_to_fb(fbb, c)?,
             Capsule::Unsupported => return Err(SerializeError::UnsupportedCapsule),
         };
 
@@ -165,4 +170,46 @@ impl RecipientRecord {
             },
         ))
     }
+}
+
+fn password_capsule_from_fb(capsule: fb_rec::PBKDF2Capsule<'_>) -> Capsule {
+    if capsule.kdf_algorithm_identifier() != fb_rec::KDFAlgorithmIdentifier::PBKDF2WithHmacSHA256 {
+        return Capsule::Unsupported;
+    }
+    let kdf_iterations = match u32::try_from(capsule.kdf_iterations()) {
+        Ok(n) if n > 0 => n,
+        _ => return Capsule::Unsupported,
+    };
+
+    Capsule::Password(Pbkdf2Capsule {
+        salt: capsule.salt().bytes().to_vec(),
+        password_salt: capsule.password_salt().bytes().to_vec(),
+        kdf_iterations,
+    })
+}
+
+fn password_capsule_to_fb(
+    fbb: &mut FlatBufferBuilder<'_>,
+    capsule: &Pbkdf2Capsule,
+) -> Result<(fb::Capsule, WIPOffset<UnionWIPOffset>), SerializeError> {
+    let kdf_iterations = i32::try_from(capsule.kdf_iterations)
+        .ok()
+        .filter(|&n| n > 0)
+        .ok_or(SerializeError::UnsupportedCapsule)?;
+
+    let salt = fbb.create_vector(&capsule.salt);
+    let password_salt = fbb.create_vector(&capsule.password_salt);
+    let offset = fb_rec::PBKDF2Capsule::create(
+        fbb,
+        &fb_rec::PBKDF2CapsuleArgs {
+            salt: Some(salt),
+            password_salt: Some(password_salt),
+            kdf_algorithm_identifier: fb_rec::KDFAlgorithmIdentifier::PBKDF2WithHmacSHA256,
+            kdf_iterations,
+        },
+    );
+    Ok((
+        fb::Capsule::recipients_PBKDF2Capsule,
+        offset.as_union_value(),
+    ))
 }
