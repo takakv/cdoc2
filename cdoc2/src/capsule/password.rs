@@ -1,5 +1,4 @@
 use pbkdf2::pbkdf2_hmac_array;
-use sha2::Sha256;
 
 use crate::capsule::{Capsule, SALT_LEN, derive_symmetric_kek, record_with_kek};
 use crate::crypto::{FMK_LEN, random_bytes};
@@ -7,6 +6,8 @@ use crate::header::RecipientRecord;
 
 pub(crate) const KDF_ITERATIONS: u32 = 600_000;
 const PASSWORD_KEY_LEN: usize = 32;
+
+type Pbkdf2Hash = sha2::Sha256;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pbkdf2Capsule {
@@ -25,7 +26,7 @@ impl Pbkdf2Capsule {
     }
 
     pub fn derive_kek(&self, password: &str, key_label: &str) -> [u8; FMK_LEN] {
-        let ikm = pbkdf2_hmac_array::<Sha256, PASSWORD_KEY_LEN>(
+        let ikm = pbkdf2_hmac_array::<Pbkdf2Hash, PASSWORD_KEY_LEN>(
             password.as_bytes(),
             &self.password_salt,
             self.kdf_iterations,
