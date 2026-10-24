@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::io::{self, BufRead, BufReader, Read, Take, Write};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use flate2::Compression;
 use flate2::bufread::ZlibDecoder;
@@ -210,24 +209,16 @@ pub(crate) fn pack<R: Read, W: Write>(
     mut open: impl FnMut(usize) -> io::Result<R>,
     out: W,
 ) -> Result<W, PackError> {
-    let mtime = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
-
     let mut builder = tar::Builder::new(ZlibEncoder::new(out, Compression::default()));
     for (i, file) in files.iter().enumerate() {
         let mut data = open(i).map_err(|error| read_error(file, error))?;
-        append_headers(&mut builder, file, mtime)?;
+        append_headers(&mut builder, file)?;
         append_data(builder.get_mut(), file, &mut data)?;
     }
     Ok(builder.into_inner()?.finish()?)
 }
 
-fn append_headers(
-    builder: &mut tar::Builder<impl Write>,
-    file: &FileEntry,
-    mtime: u64,
-) -> io::Result<()> {
+fn append_headers(builder: &mut tar::Builder<impl Write>, file: &FileEntry) -> io::Result<()> {
     let size_record = file.size.to_string();
 
     let mut pax: Vec<(&str, &[u8])> = Vec::new();
@@ -247,7 +238,7 @@ fn append_headers(
     header.set_entry_type(EntryType::Regular);
     header.set_size(file.size);
     header.set_mode(0o644);
-    header.set_mtime(mtime);
+    header.set_mtime(0);
     header.set_cksum();
     builder.get_mut().write_all(header.as_bytes())
 }
