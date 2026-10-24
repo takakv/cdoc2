@@ -11,9 +11,11 @@ homepage.workspace = true
 repository.workspace = true
 
 [dependencies]
+base64 = "0.23.1"
 chacha20poly1305 = "0.11.0"
 flatbuffers = "25.12.19"
 flate2 = "1.1.10"
+form_urlencoded = "1"
 getrandom = "0.4.3"
 hkdf = "0.13.0"
 hmac = "0.13"

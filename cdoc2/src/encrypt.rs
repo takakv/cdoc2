@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::archive::{File, FileNameError, pack};
 use crate::capsule::{password, symmetric};
 use crate::container::{NONCE_LEN, compute_header_hmac, encrypt_payload, write_container};
@@ -17,10 +19,24 @@ pub enum Recipient<'a> {
     },
 }
 
+impl Recipient<'_> {
+    pub fn key_label(&self) -> &str {
+        match *self {
+            Recipient::Symmetric { key_label, .. } | Recipient::Password { key_label, .. } => {
+                key_label
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum EncryptError {
     #[error("at least one recipient is required")]
     NoRecipients,
+    #[error("every recipient needs a key label")]
+    EmptyKeyLabel,
+    #[error("key label {0:?} is used by more than one recipient")]
+    DuplicateKeyLabel(String),
     #[error(transparent)]
     FileName(#[from] FileNameError),
     #[error("the header is too large (too many recipients or too long key labels)")]
@@ -35,6 +51,7 @@ pub fn encrypt(files: &[File], recipients: &[Recipient]) -> Result<Vec<u8>, Encr
     if recipients.is_empty() {
         return Err(EncryptError::NoRecipients);
     }
+    check_key_labels(recipients)?;
 
     let tar = pack(files)?;
     let fmk = generate_fmk().map_err(random_error)?;
@@ -71,4 +88,18 @@ pub fn encrypt(files: &[File], recipients: &[Recipient]) -> Result<Vec<u8>, Encr
 
 fn random_error(e: getrandom::Error) -> EncryptError {
     EncryptError::Random(e.to_string())
+}
+
+fn check_key_labels(recipients: &[Recipient]) -> Result<(), EncryptError> {
+    let mut seen = HashSet::new();
+    for recipient in recipients {
+        let label = recipient.key_label();
+        if label.is_empty() {
+            return Err(EncryptError::EmptyKeyLabel);
+        }
+        if !seen.insert(label) {
+            return Err(EncryptError::DuplicateKeyLabel(label.to_owned()));
+        }
+    }
+    Ok(())
 }
