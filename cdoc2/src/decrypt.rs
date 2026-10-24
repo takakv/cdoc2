@@ -1,9 +1,9 @@
 use crate::archive::{self, File, UnpackError};
 use crate::capsule::{Capsule, decrypt_fmk};
 use crate::container::Container;
-use crate::crypto::{FMK_LEN, verify_header_hmac};
+use crate::crypto::FMK_LEN;
 use crate::header::{FmkEncryptionMethod, RecipientRecord};
-use crate::payload::{PayloadError, check_payload_encryption_method, decrypt_payload};
+use crate::payload::{PayloadDecryptor, PayloadError, check_payload_encryption_method};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DecryptError {
@@ -71,9 +71,8 @@ fn decrypt_with_kek(
         .as_slice()
         .try_into()
         .map_err(|_| DecryptError::InvalidEncryptedFmkLength(record.encrypted_fmk.len()))?;
-    let fmk = decrypt_fmk(encrypted_fmk, kek);
-    verify_header_hmac(&fmk, container.header_bytes, container.header_hmac)
-        .map_err(|_| DecryptError::HmacMismatch)?;
-    let payload = decrypt_payload(container, &fmk)?;
+    let payload = PayloadDecryptor::new(container, decrypt_fmk(encrypted_fmk, kek))
+        .map_err(|_| DecryptError::HmacMismatch)?
+        .decrypt()?;
     Ok(archive::unpack(&payload, max_size)?)
 }
