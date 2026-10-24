@@ -181,6 +181,8 @@ const RESERVED_NAMES: [&str; 28] = [
     "LPT9", "LPT¹", "LPT²", "LPT³",
 ];
 const RIGHT_TO_LEFT_OVERRIDE: char = '\u{202E}';
+const NONCHARACTERS: [char; 2] = ['\u{FFFE}', '\u{FFFF}'];
+const MAX_NAME_LEN: usize = 1000;
 
 fn check_file_name(name: &str, seen: &mut HashSet<String>) -> Result<(), FileNameError> {
     if !is_valid_file_name(name) {
@@ -193,14 +195,19 @@ fn check_file_name(name: &str, seen: &mut HashSet<String>) -> Result<(), FileNam
 }
 
 // https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file
+// https://open-eid.github.io/CDOC2/2.0/02_protocol_and_cryptography_spec/ch03_container_format/#unencrypted-payload
 fn is_valid_file_name(name: &str) -> bool {
     !name.is_empty()
+        && name.len() <= MAX_NAME_LEN
         && !name.starts_with([' ', '-'])
         && !name.ends_with([' ', '.'])
         && !is_reserved_name(name)
-        && !name
-            .chars()
-            .any(|c| FORBIDDEN_CHARS.contains(&c) || c.is_control() || c == RIGHT_TO_LEFT_OVERRIDE)
+        && !name.chars().any(|c| {
+            FORBIDDEN_CHARS.contains(&c)
+                || c.is_control()
+                || c == RIGHT_TO_LEFT_OVERRIDE
+                || NONCHARACTERS.contains(&c)
+        })
 }
 
 fn is_reserved_name(name: &str) -> bool {
