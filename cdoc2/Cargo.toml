@@ -34,4 +34,5 @@ thiserror = "2.0.21"
 hazmat = []
 
 [dev-dependencies]
+p384 = { version = "0.14.0", default-features = false, features = ["pem"] }
 wycheproof = { version = "0.7.0", default-features = false, features = ["aead"] }
