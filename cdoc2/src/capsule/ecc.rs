@@ -1,6 +1,6 @@
-use elliptic_curve::ecdh::diffie_hellman;
+use elliptic_curve::ecdh::{SharedSecret, diffie_hellman};
 use elliptic_curve::sec1::{FromSec1Point, ModulusSize, ToSec1Point};
-use elliptic_curve::{AffinePoint, CurveArithmetic, FieldBytesSize, PublicKey, SecretKey};
+use elliptic_curve::{AffinePoint, Curve, CurveArithmetic, FieldBytesSize, PublicKey, SecretKey};
 
 use crate::capsule::expand_kek;
 use crate::crypto::{FMK_LEN, HashAlgorithm};
@@ -57,12 +57,12 @@ impl EccPublicKeyCapsule {
         }
         let pk = PublicKey::<C>::from_sec1_bytes(&self.sender_public_key)
             .map_err(|_| EccKekError::InvalidSenderKey)?;
-        let s = diffie_hellman(secret_key.to_nonzero_scalar(), pk.as_affine());
+        let shared_secret = diffie_hellman(secret_key.to_nonzero_scalar(), pk.as_affine());
+        Ok(self.kek_from_shared_secret(&shared_secret))
+    }
 
-        let hk = s.extract::<HashAlgorithm>(Some(b"CDOC20kekpremaster"));
-        Ok(expand_kek(
-            &hk,
-            &[&self.recipient_public_key, &self.sender_public_key],
-        ))
+    fn kek_from_shared_secret<C: Curve>(&self, shared_secret: &SharedSecret<C>) -> [u8; FMK_LEN] {
+        let hk = shared_secret.extract::<HashAlgorithm>(Some(b"CDOC20kekpremaster"));
+        expand_kek(&hk, &[&self.recipient_public_key, &self.sender_public_key])
     }
 }
