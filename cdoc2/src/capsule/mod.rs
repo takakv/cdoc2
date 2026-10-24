@@ -6,8 +6,10 @@ use ecc::EccPublicKeyCapsule;
 use password::Pbkdf2Capsule;
 use symmetric::SymmetricKeyCapsule;
 
-use crate::crypto::FMK_LEN;
+use crate::crypto::{FMK_LEN, Hkdf};
 use crate::header::{FmkEncryptionMethod, RecipientRecord};
+
+const ALG_ID: &str = "XOR";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Capsule {
@@ -23,6 +25,14 @@ pub fn encrypt_fmk(fmk: &[u8; FMK_LEN], kek: &[u8; FMK_LEN]) -> [u8; FMK_LEN] {
 
 pub fn decrypt_fmk(encrypted_fmk: &[u8; FMK_LEN], kek: &[u8; FMK_LEN]) -> [u8; FMK_LEN] {
     xor(encrypted_fmk, kek)
+}
+
+pub(crate) fn expand_kek(hk: &Hkdf, context: &[&[u8]]) -> [u8; FMK_LEN] {
+    let info = [&[b"CDOC20kek", ALG_ID.as_bytes()], context].concat();
+    let mut kek = [0u8; FMK_LEN];
+    hk.expand_multi_info(&info, &mut kek)
+        .expect("FMK_LEN is a valid HKDF-Expand output length");
+    kek
 }
 
 pub(crate) fn record_with_kek(

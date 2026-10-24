@@ -4,8 +4,9 @@ use hmac::{KeyInit, Mac};
 pub const FMK_LEN: usize = 32;
 pub(crate) const HMAC_LEN: usize = 32;
 
-pub(crate) type Hkdf = hkdf::Hkdf<sha2::Sha256>;
-pub(crate) type Hmac = hmac::Hmac<sha2::Sha256>;
+pub(crate) type HashAlgorithm = sha2::Sha256;
+pub(crate) type Hkdf = hkdf::Hkdf<HashAlgorithm>;
+pub(crate) type Hmac = hmac::Hmac<HashAlgorithm>;
 
 const FMK_INPUT_LEN: usize = 32;
 const HHK_LEN: usize = 32;

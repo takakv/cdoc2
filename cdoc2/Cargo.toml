@@ -13,12 +13,16 @@ repository.workspace = true
 [dependencies]
 base64 = "0.23.1"
 chacha20poly1305 = "0.11.0"
+elliptic-curve = { version = "0.14.1", default-features = false, features = ["ecdh", "sec1"] }
 flatbuffers = "25.12.19"
 flate2 = "1.1.10"
 form_urlencoded = "1"
 getrandom = "0.4.3"
 hkdf = "0.13.0"
 hmac = "0.13"
+p256 = { version = "0.14.0", default-features = false, features = ["ecdh"] }
+p384 = { version = "0.14.0", default-features = false, features = ["ecdh"] }
+p521 = { version = "0.14.0", default-features = false, features = ["ecdh"] }
 pbkdf2 = "0.13.0"
 sha2 = "0.11.1"
 tar = { version = "0.4.46", default-features = false }
