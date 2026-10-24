@@ -18,18 +18,25 @@ impl KeyLabel {
 }
 
 pub fn symmetric(label: &str) -> String {
-    structured("secret", label)
+    structured("secret", &[("label", label)])
 }
 
 pub fn password(label: &str) -> String {
-    structured("pw", label)
+    structured("pw", &[("label", label)])
 }
 
-fn structured(kind: &str, label: &str) -> String {
+pub fn public_key(file: &str, label: Option<&str>) -> String {
+    match label {
+        Some(label) => structured("pub_key", &[("file", file), ("label", label)]),
+        None => structured("pub_key", &[("file", file)]),
+    }
+}
+
+fn structured(kind: &str, fields: &[(&str, &str)]) -> String {
     let fields = form_urlencoded::Serializer::new(String::new())
         .append_pair("v", "1")
         .append_pair("type", kind)
-        .append_pair("label", label)
+        .extend_pairs(fields)
         .finish();
     format!("data:,{fields}")
 }
