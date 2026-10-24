@@ -2,9 +2,10 @@ use std::collections::HashSet;
 
 use crate::archive::{File, FileNameError, pack};
 use crate::capsule::{password, symmetric};
-use crate::container::{NONCE_LEN, compute_header_hmac, encrypt_payload, write_container};
-use crate::crypto::{generate_fmk, random_bytes};
+use crate::container::write_container;
+use crate::crypto::{compute_header_hmac, generate_fmk, random_bytes};
 use crate::header::{Header, PayloadEncryptionMethod};
+use crate::payload::{NONCE_LEN, encrypt_payload};
 
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
