@@ -1,12 +1,13 @@
 use std::collections::HashSet;
 
+use crate::aead_stream::NONCE_LEN;
 use crate::archive::{File, FileNameError, pack};
 use crate::capsule::ecc::{self, EcPublicKey};
 use crate::capsule::{password, symmetric};
 use crate::container::write_container;
 use crate::crypto::{compute_header_hmac, generate_fmk, random_bytes};
 use crate::header::{Header, PayloadEncryptionMethod};
-use crate::payload::{NONCE_LEN, encrypt_payload};
+use crate::payload::encrypt_payload;
 
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]

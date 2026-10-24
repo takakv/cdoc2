@@ -1,11 +1,6 @@
-use chacha20poly1305::aead::{Aead, Payload};
-use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce};
-
+use crate::aead_stream::{AeadError, Decryptor, Encryptor, NONCE_LEN, TAG_LEN};
 use crate::crypto::{AuthenticatedHeader, FMK_LEN, HMAC_LEN, derive_cek};
 use crate::header::{Header, PayloadEncryptionMethod};
-
-pub(crate) const NONCE_LEN: usize = 12;
-const TAG_LEN: usize = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PayloadError {
@@ -24,10 +19,6 @@ pub(crate) fn check_payload_encryption_method(header: &Header) -> Result<(), Pay
     Ok(())
 }
 
-fn payload_cipher(fmk: &[u8; FMK_LEN]) -> ChaCha20Poly1305 {
-    ChaCha20Poly1305::new(&Key::from(derive_cek(fmk)))
-}
-
 fn payload_aad(header_bytes: &[u8], header_hmac: &[u8; HMAC_LEN]) -> Vec<u8> {
     [
         b"CDOC20payload".as_slice(),
@@ -43,33 +34,42 @@ pub(crate) fn encrypt_payload(
     header_hmac: &[u8; HMAC_LEN],
     nonce: &[u8; NONCE_LEN],
     plaintext: &[u8],
-) -> Result<Vec<u8>, chacha20poly1305::Error> {
-    let ciphertext = payload_cipher(fmk).encrypt(
-        &Nonce::from(*nonce),
-        Payload {
-            msg: plaintext,
-            aad: &payload_aad(header_bytes, header_hmac),
-        },
-    )?;
-    Ok([nonce.as_slice(), &ciphertext].concat())
+) -> Result<Vec<u8>, AeadError> {
+    let mut encryptor = Encryptor::new(
+        &derive_cek(fmk),
+        nonce,
+        &payload_aad(header_bytes, header_hmac),
+    );
+    let mut payload = Vec::with_capacity(NONCE_LEN + plaintext.len() + TAG_LEN);
+    payload.extend_from_slice(nonce);
+    payload.extend_from_slice(plaintext);
+    encryptor.encrypt(&mut payload[NONCE_LEN..])?;
+    payload.extend_from_slice(&encryptor.finalize());
+    Ok(payload)
 }
 
 pub(crate) fn decrypt_payload(
     header: &AuthenticatedHeader,
     payload: &[u8],
 ) -> Result<Vec<u8>, PayloadError> {
-    let (nonce, ciphertext) = payload
+    let (nonce, rest) = payload
         .split_first_chunk::<NONCE_LEN>()
-        .filter(|(_, ciphertext)| ciphertext.len() >= TAG_LEN)
+        .ok_or(PayloadError::TooShort)?;
+    let (ciphertext, tag) = rest
+        .split_last_chunk::<TAG_LEN>()
         .ok_or(PayloadError::TooShort)?;
 
-    payload_cipher(header.fmk())
-        .decrypt(
-            &Nonce::from(*nonce),
-            Payload {
-                msg: ciphertext,
-                aad: &payload_aad(header.header_bytes(), header.header_hmac()),
-            },
-        )
-        .map_err(|_| PayloadError::DecryptionFailed)
+    let mut decryptor = Decryptor::new(
+        &derive_cek(header.fmk()),
+        nonce,
+        &payload_aad(header.header_bytes(), header.header_hmac()),
+    );
+    let mut plaintext = ciphertext.to_vec();
+    decryptor
+        .decrypt(&mut plaintext)
+        .map_err(|_| PayloadError::DecryptionFailed)?;
+    decryptor
+        .verify(tag)
+        .map_err(|_| PayloadError::DecryptionFailed)?;
+    Ok(plaintext)
 }

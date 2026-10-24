@@ -1,5 +1,6 @@
 //! CDOC2 encrypted document containers.
 
+mod aead_stream;
 pub mod archive;
 pub mod capsule;
 pub mod container;
