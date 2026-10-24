@@ -1,8 +1,10 @@
 pub mod ecc;
+pub mod key_server;
 pub mod password;
 pub mod symmetric;
 
 use ecc::EccPublicKeyCapsule;
+use key_server::KeyServerCapsule;
 use password::Pbkdf2Capsule;
 use symmetric::SymmetricKeyCapsule;
 
@@ -17,6 +19,7 @@ pub enum Capsule {
     Symmetric(SymmetricKeyCapsule),
     Password(Pbkdf2Capsule),
     Ecc(EccPublicKeyCapsule),
+    KeyServer(KeyServerCapsule),
     Unsupported,
 }
 
