@@ -26,10 +26,10 @@ pub fn password(label: &str) -> String {
 }
 
 pub fn public_key(file: &str, label: Option<&str>) -> String {
-    match label {
-        Some(label) => structured("pub_key", &[("file", file), ("label", label)]),
-        None => structured("pub_key", &[("file", file)]),
-    }
+    structured(
+        "pub_key",
+        &present([("file", Some(file)), ("label", label)]),
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
