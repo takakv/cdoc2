@@ -107,6 +107,13 @@ impl Header {
 }
 
 impl RecipientRecord {
+    pub fn is_for_public_key(&self, public_key: &[u8]) -> bool {
+        match &self.capsule {
+            Capsule::Ecc(capsule) => capsule.recipient_public_key == public_key,
+            Capsule::Symmetric(_) | Capsule::Password(_) | Capsule::Unsupported => false,
+        }
+    }
+
     fn from_fb(record: fb::RecipientRecord<'_>) -> RecipientRecord {
         let capsule = if let Some(c) = record.capsule_as_recipients_symmetric_key_capsule() {
             symmetric_capsule_from_fb(c)
