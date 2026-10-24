@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::io::{self, Read, Take, Write};
+use std::io::{self, BufRead, BufReader, Read, Take, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use flate2::Compression;
@@ -13,6 +13,29 @@ pub struct File {
     pub data: Vec<u8>,
 }
 
+pub trait Sink {
+    fn create_file(&mut self, name: &str) -> io::Result<()>;
+    fn append(&mut self, data: &[u8]) -> io::Result<()>;
+}
+
+impl Sink for Vec<File> {
+    fn create_file(&mut self, name: &str) -> io::Result<()> {
+        self.push(File {
+            name: name.to_owned(),
+            data: Vec::new(),
+        });
+        Ok(())
+    }
+
+    fn append(&mut self, data: &[u8]) -> io::Result<()> {
+        let file = self
+            .last_mut()
+            .expect("unpack creates a file before appending");
+        file.data.extend_from_slice(data);
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum UnpackError {
     #[error("malformed archive: {0}")]
@@ -23,6 +46,8 @@ pub enum UnpackError {
     UnsupportedEntryType { name: String, entry_type: char },
     #[error(transparent)]
     FileName(#[from] FileNameError),
+    #[error("cannot write unpacked file: {0}")]
+    Write(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -34,21 +59,25 @@ pub enum FileNameError {
 }
 
 const BLOCK_SIZE: u64 = 512;
-const USTAR_NAME_LEN: usize = 100;
-const USTAR_MAX_SIZE: u64 = 0o777_7777_7777;
-const IN_MEMORY: &str = "writing to memory should not fail";
 
-pub fn unpack(compressed: &[u8], max_size: u64) -> Result<Vec<File>, UnpackError> {
-    let mut reader = ZlibDecoder::new(compressed).take(max_size.saturating_add(1));
-    let result = unpack_limited(&mut reader);
+pub fn unpack(
+    compressed: impl Read,
+    max_size: u64,
+    sink: &mut impl Sink,
+) -> Result<(), UnpackError> {
+    let mut reader = ZlibDecoder::new(BufReader::new(compressed)).take(max_size.saturating_add(1));
+    let result = unpack_limited(&mut reader, sink);
     if reader.limit() == 0 {
         return Err(UnpackError::TooLarge(max_size));
     }
     result
 }
 
-fn unpack_limited(reader: &mut Take<ZlibDecoder<&[u8]>>) -> Result<Vec<File>, UnpackError> {
-    let files = read_files(&mut tar::Archive::new(&mut *reader))?;
+fn unpack_limited(
+    reader: &mut Take<ZlibDecoder<impl BufRead>>,
+    sink: &mut impl Sink,
+) -> Result<(), UnpackError> {
+    read_files(&mut tar::Archive::new(&mut *reader), sink)?;
 
     // https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html
     // "At the end of the archive file there shall be two 512-byte blocks filled with binary zeros,
@@ -57,7 +86,8 @@ fn unpack_limited(reader: &mut Take<ZlibDecoder<&[u8]>>) -> Result<Vec<File>, Un
     // Checking for one block is enough since the tar crate stops after reading the
     // first of the zero blocks, but we must still check the second one after.
     let zeros = read_zeros(reader)?;
-    if !reader.get_ref().get_ref().is_empty() {
+    let compressed_rest = reader.get_mut().get_mut().fill_buf().map_err(malformed)?;
+    if !compressed_rest.is_empty() {
         return Err(trailing_data());
     }
     if zeros < BLOCK_SIZE {
@@ -65,11 +95,13 @@ fn unpack_limited(reader: &mut Take<ZlibDecoder<&[u8]>>) -> Result<Vec<File>, Un
             "missing end-of-archive marker".to_owned(),
         ));
     }
-    Ok(files)
+    Ok(())
 }
 
-fn read_files<R: Read>(archive: &mut tar::Archive<R>) -> Result<Vec<File>, UnpackError> {
-    let mut files = Vec::new();
+fn read_files(
+    archive: &mut tar::Archive<impl Read>,
+    sink: &mut impl Sink,
+) -> Result<(), UnpackError> {
     let mut names = HashSet::new();
 
     for entry in archive.entries().map_err(malformed)? {
@@ -98,12 +130,22 @@ fn read_files<R: Read>(archive: &mut tar::Archive<R>) -> Result<Vec<File>, Unpac
         })?;
         check_file_name(&name, &mut names)?;
 
-        let mut data = Vec::new();
-        entry.read_to_end(&mut data).map_err(malformed)?;
-        files.push(File { name, data });
+        sink.create_file(&name).map_err(write_error)?;
+        copy_to_sink(&mut entry, sink)?;
     }
 
-    Ok(files)
+    Ok(())
+}
+
+fn copy_to_sink(entry: &mut impl Read, sink: &mut impl Sink) -> Result<(), UnpackError> {
+    let mut buf = [0; 8192];
+    loop {
+        let n = entry.read(&mut buf).map_err(malformed)?;
+        if n == 0 {
+            return Ok(());
+        }
+        sink.append(&buf[..n]).map_err(write_error)?;
+    }
 }
 
 fn read_zeros(reader: &mut impl Read) -> Result<u64, UnpackError> {
@@ -125,9 +167,17 @@ fn malformed(e: io::Error) -> UnpackError {
     UnpackError::Malformed(e.to_string())
 }
 
+fn write_error(e: io::Error) -> UnpackError {
+    UnpackError::Write(e.to_string())
+}
+
 fn trailing_data() -> UnpackError {
     UnpackError::Malformed("data after the end of the archive".to_owned())
 }
+
+const USTAR_NAME_LEN: usize = 100;
+const USTAR_MAX_SIZE: u64 = 0o777_7777_7777;
+const IN_MEMORY: &str = "writing to memory should not fail";
 
 pub fn pack(files: &[File]) -> Result<Vec<u8>, FileNameError> {
     let mut names = HashSet::new();

@@ -1,10 +1,12 @@
-use crate::archive::{self, File, UnpackError};
+use std::io::{Cursor, Read, Seek};
+
+use crate::archive::{self, File, Sink, UnpackError};
 use crate::capsule::ecc::{EcSecretKey, EccKekError};
 use crate::capsule::{Capsule, decrypt_fmk};
-use crate::container::Container;
-use crate::crypto::{FMK_LEN, authenticate_header};
+use crate::container::{Container, ContainerHead};
+use crate::crypto::{AuthenticatedHeader, FMK_LEN, authenticate_header};
 use crate::header::{FmkEncryptionMethod, RecipientRecord};
-use crate::payload::{PayloadError, check_payload_encryption_method, decrypt_payload};
+use crate::payload::{PayloadError, PayloadReader, check_payload_encryption_method};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DecryptError {
@@ -39,16 +41,56 @@ pub fn decrypt(
     key: &DecryptionKey,
     max_size: u64,
 ) -> Result<Vec<File>, DecryptError> {
-    let kek = derive_kek(container, record, key)?;
-    decrypt_with_kek(container, record, &kek, max_size)
+    let mut files = Vec::new();
+    decrypt_into(
+        &container.head,
+        record,
+        key,
+        Cursor::new(container.payload),
+        max_size,
+        &mut files,
+    )?;
+    Ok(files)
+}
+
+pub fn decrypt_into(
+    head: &ContainerHead,
+    record: &RecipientRecord,
+    key: &DecryptionKey,
+    payload: impl Read + Seek,
+    max_size: u64,
+    sink: &mut impl Sink,
+) -> Result<(), DecryptError> {
+    let header = authenticate(head, record, key)?;
+    let mut payload = PayloadReader::new(&header, payload)?;
+    let unpacked = archive::unpack(&mut payload, max_size, sink);
+    // The payload can change between the two reads, so the tag must be checked again.
+    payload.finish()?;
+    Ok(unpacked?)
+}
+
+fn authenticate<'a>(
+    head: &'a ContainerHead,
+    record: &RecipientRecord,
+    key: &DecryptionKey,
+) -> Result<AuthenticatedHeader<'a>, DecryptError> {
+    let kek = derive_kek(head, record, key)?;
+    let encrypted_fmk = record
+        .encrypted_fmk
+        .as_slice()
+        .try_into()
+        .map_err(|_| DecryptError::InvalidEncryptedFmkLength(record.encrypted_fmk.len()))?;
+    let fmk = decrypt_fmk(encrypted_fmk, &kek);
+    authenticate_header(fmk, &head.header_bytes, &head.header_hmac)
+        .map_err(|_| DecryptError::HmacMismatch)
 }
 
 fn derive_kek(
-    container: &Container,
+    head: &ContainerHead,
     record: &RecipientRecord,
     key: &DecryptionKey,
 ) -> Result<[u8; FMK_LEN], DecryptError> {
-    check_encryption_methods(container, record)?;
+    check_encryption_methods(head, record)?;
     match (&record.capsule, *key) {
         (Capsule::Symmetric(capsule), DecryptionKey::Symmetric(key)) => {
             Ok(capsule.derive_kek(key, &record.key_label))
@@ -67,34 +109,12 @@ fn derive_kek(
 }
 
 fn check_encryption_methods(
-    container: &Container,
+    head: &ContainerHead,
     record: &RecipientRecord,
 ) -> Result<(), DecryptError> {
     if record.fmk_encryption_method != FmkEncryptionMethod::Xor {
         return Err(DecryptError::UnsupportedFmkEncryptionMethod);
     }
-    check_payload_encryption_method(&container.head.header)?;
+    check_payload_encryption_method(&head.header)?;
     Ok(())
-}
-
-fn decrypt_with_kek(
-    container: &Container,
-    record: &RecipientRecord,
-    kek: &[u8; FMK_LEN],
-    max_size: u64,
-) -> Result<Vec<File>, DecryptError> {
-    let encrypted_fmk = record
-        .encrypted_fmk
-        .as_slice()
-        .try_into()
-        .map_err(|_| DecryptError::InvalidEncryptedFmkLength(record.encrypted_fmk.len()))?;
-    let fmk = decrypt_fmk(encrypted_fmk, kek);
-    let header = authenticate_header(
-        fmk,
-        &container.head.header_bytes,
-        &container.head.header_hmac,
-    )
-    .map_err(|_| DecryptError::HmacMismatch)?;
-    let payload = decrypt_payload(&header, container.payload)?;
-    Ok(archive::unpack(&payload, max_size)?)
 }

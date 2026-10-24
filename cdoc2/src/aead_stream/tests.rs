@@ -44,6 +44,18 @@ fn decrypt_in_chunks(
     Ok(buf)
 }
 
+fn verify_in_chunks(
+    mut verifier: Verifier,
+    encrypted: &[u8],
+    chunking: &[usize],
+) -> Result<(), AeadError> {
+    let (ciphertext, tag) = encrypted.split_last_chunk::<TAG_LEN>().unwrap();
+    for range in chunk_ranges(ciphertext.len(), chunking) {
+        verifier.update(&ciphertext[range]).unwrap();
+    }
+    verifier.verify(tag)
+}
+
 #[test]
 fn wycheproof() {
     let set = TestSet::load(TestName::ChaCha20Poly1305).unwrap();
@@ -64,14 +76,18 @@ fn wycheproof() {
             let context = format!("case {}, chunks {chunking:?}", case.tc_id);
             let decryptor = Decryptor::new(&key, &nonce, &case.aad);
             let decrypted = decrypt_in_chunks(decryptor, &encrypted, chunking);
+            let verifier = Verifier::new(&key, &nonce, &case.aad);
+            let verified = verify_in_chunks(verifier, &encrypted, chunking);
 
             if case.result == TestResult::Valid {
                 let encryptor = Encryptor::new(&key, &nonce, &case.aad);
                 let reencrypted = encrypt_in_chunks(encryptor, &case.pt, chunking);
                 assert_eq!(reencrypted, encrypted, "{context}");
                 assert_eq!(decrypted, Ok(case.pt.to_vec()), "{context}");
+                assert_eq!(verified, Ok(()), "{context}");
             } else {
                 assert_eq!(decrypted, Err(AeadError::TagMismatch), "{context}");
+                assert_eq!(verified, Err(AeadError::TagMismatch), "{context}");
             }
         }
     }
@@ -91,6 +107,11 @@ fn message_length_limit() {
         encryptor.encrypt(&mut [0; 1]),
         Err(AeadError::MessageTooLong)
     );
+
+    let mut verifier = Verifier::new(&[0; KEY_LEN], &[0; NONCE_LEN], &[]);
+    skip_to_last_block(&mut verifier.0);
+    assert_eq!(verifier.update(&[0; 64]), Ok(()));
+    assert_eq!(verifier.update(&[0; 1]), Err(AeadError::MessageTooLong));
 
     let mut decryptor = Decryptor::new(&[0; KEY_LEN], &[0; NONCE_LEN], &[]);
     skip_to_last_block(&mut decryptor.0);

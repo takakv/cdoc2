@@ -1,4 +1,6 @@
-use crate::aead_stream::{AeadError, Decryptor, Encryptor, NONCE_LEN, TAG_LEN};
+use std::io::{self, Read, Seek, SeekFrom, Take};
+
+use crate::aead_stream::{AeadError, Decryptor, Encryptor, NONCE_LEN, TAG_LEN, Verifier};
 use crate::crypto::{AuthenticatedHeader, FMK_LEN, HMAC_LEN, derive_cek};
 use crate::header::{Header, PayloadEncryptionMethod};
 
@@ -10,6 +12,8 @@ pub enum PayloadError {
     TooShort,
     #[error("payload decryption failed: corrupted or tampered payload")]
     DecryptionFailed,
+    #[error("cannot read payload: {0}")]
+    Read(String),
 }
 
 pub(crate) fn check_payload_encryption_method(header: &Header) -> Result<(), PayloadError> {
@@ -48,28 +52,98 @@ pub(crate) fn encrypt_payload(
     Ok(payload)
 }
 
-pub(crate) fn decrypt_payload(
-    header: &AuthenticatedHeader,
-    payload: &[u8],
-) -> Result<Vec<u8>, PayloadError> {
-    let (nonce, rest) = payload
-        .split_first_chunk::<NONCE_LEN>()
-        .ok_or(PayloadError::TooShort)?;
-    let (ciphertext, tag) = rest
-        .split_last_chunk::<TAG_LEN>()
-        .ok_or(PayloadError::TooShort)?;
+const READ_SIZE: usize = 64 * 1024;
 
-    let mut decryptor = Decryptor::new(
-        &derive_cek(header.fmk()),
-        nonce,
-        &payload_aad(header.header_bytes(), header.header_hmac()),
-    );
-    let mut plaintext = ciphertext.to_vec();
-    decryptor
-        .decrypt(&mut plaintext)
-        .map_err(|_| PayloadError::DecryptionFailed)?;
-    decryptor
-        .verify(tag)
-        .map_err(|_| PayloadError::DecryptionFailed)?;
-    Ok(plaintext)
+pub(crate) struct PayloadReader<R> {
+    ciphertext: Take<R>,
+    decryptor: Decryptor,
+    tag: [u8; TAG_LEN],
+}
+
+impl<R: Read + Seek> PayloadReader<R> {
+    pub(crate) fn new(header: &AuthenticatedHeader, mut payload: R) -> Result<Self, PayloadError> {
+        let start = payload.stream_position().map_err(read_error)?;
+        let end = payload.seek(SeekFrom::End(0)).map_err(read_error)?;
+        let ciphertext_len = end
+            .saturating_sub(start)
+            .checked_sub((NONCE_LEN + TAG_LEN) as u64)
+            .ok_or(PayloadError::TooShort)?;
+        payload.seek(SeekFrom::Start(start)).map_err(read_error)?;
+        let nonce = read_array(&mut payload)?;
+
+        let cek = derive_cek(header.fmk());
+        let aad = payload_aad(header.header_bytes(), header.header_hmac());
+
+        let mut verifier = Verifier::new(&cek, &nonce, &aad);
+        let mut ciphertext = (&mut payload).take(ciphertext_len);
+        let mut buf = vec![0; READ_SIZE];
+        while let n @ 1.. = fill(&mut ciphertext, &mut buf)? {
+            verifier.update(&buf[..n]).map_err(decryption_failed)?;
+        }
+
+        let tag = read_array(&mut payload)?;
+        verifier.verify(&tag).map_err(decryption_failed)?;
+
+        payload
+            .seek(SeekFrom::Start(start + NONCE_LEN as u64))
+            .map_err(read_error)?;
+        Ok(PayloadReader {
+            ciphertext: payload.take(ciphertext_len),
+            decryptor: Decryptor::new(&cek, &nonce, &aad),
+            tag,
+        })
+    }
+}
+
+impl<R: Read> PayloadReader<R> {
+    pub(crate) fn finish(mut self) -> Result<(), PayloadError> {
+        let mut buf = vec![0; READ_SIZE];
+        while self.read_payload(&mut buf)? > 0 {}
+        self.decryptor.verify(&self.tag).map_err(decryption_failed)
+    }
+
+    fn read_payload(&mut self, out: &mut [u8]) -> Result<usize, PayloadError> {
+        let n = fill(&mut self.ciphertext, out)?;
+        self.decryptor
+            .decrypt(&mut out[..n])
+            .map_err(decryption_failed)?;
+        Ok(n)
+    }
+}
+
+impl<R: Read> Read for PayloadReader<R> {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        self.read_payload(out).map_err(io::Error::other)
+    }
+}
+
+fn fill(reader: &mut impl Read, buf: &mut [u8]) -> Result<usize, PayloadError> {
+    let mut filled = 0;
+    while filled < buf.len() {
+        match reader.read(&mut buf[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(read_error(e)),
+        }
+    }
+    Ok(filled)
+}
+
+fn read_array<const N: usize>(reader: &mut impl Read) -> Result<[u8; N], PayloadError> {
+    let mut bytes = [0; N];
+    reader.read_exact(&mut bytes).map_err(read_error)?;
+    Ok(bytes)
+}
+
+fn read_error(e: io::Error) -> PayloadError {
+    if e.kind() == io::ErrorKind::UnexpectedEof {
+        PayloadError::TooShort
+    } else {
+        PayloadError::Read(e.to_string())
+    }
+}
+
+fn decryption_failed(_: AeadError) -> PayloadError {
+    PayloadError::DecryptionFailed
 }

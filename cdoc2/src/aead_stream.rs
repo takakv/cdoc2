@@ -52,10 +52,25 @@ impl Decryptor {
     }
 
     pub(crate) fn verify(self, tag: &[u8; TAG_LEN]) -> Result<(), AeadError> {
-        self.0
-            .finish_mac()
-            .verify(&Block::from(*tag))
-            .map_err(|_| AeadError::TagMismatch)
+        self.0.verify(tag)
+    }
+}
+
+pub(crate) struct Verifier(Core);
+
+impl Verifier {
+    pub(crate) fn new(key: &[u8; KEY_LEN], nonce: &[u8; NONCE_LEN], aad: &[u8]) -> Self {
+        Verifier(Core::new(key, nonce, aad))
+    }
+
+    pub(crate) fn update(&mut self, ciphertext: &[u8]) -> Result<(), AeadError> {
+        self.0.reserve(ciphertext.len())?;
+        self.0.authenticate(ciphertext);
+        Ok(())
+    }
+
+    pub(crate) fn verify(self, tag: &[u8; TAG_LEN]) -> Result<(), AeadError> {
+        self.0.verify(tag)
     }
 }
 
@@ -99,6 +114,12 @@ impl Core {
     fn authenticate(&mut self, data: &[u8]) {
         self.pending
             .digest_blocks(data, |blocks| self.mac.update(blocks));
+    }
+
+    fn verify(self, tag: &[u8; TAG_LEN]) -> Result<(), AeadError> {
+        self.finish_mac()
+            .verify(&Block::from(*tag))
+            .map_err(|_| AeadError::TagMismatch)
     }
 
     fn finish_mac(mut self) -> Poly1305 {
