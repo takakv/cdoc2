@@ -5,4 +5,5 @@ pub mod capsule;
 pub mod container;
 pub mod crypto;
 pub mod decrypt;
+pub mod encrypt;
 pub mod header;

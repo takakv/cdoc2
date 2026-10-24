@@ -12,7 +12,7 @@ const MAX_HEADER_LEN: usize = 1 << 20;
 const HMAC_LEN: usize = 32;
 const HHK_LEN: usize = 32;
 const CEK_LEN: usize = 32;
-const NONCE_LEN: usize = 12;
+pub(crate) const NONCE_LEN: usize = 12;
 const TAG_LEN: usize = 16;
 
 #[derive(Debug, Clone)]
