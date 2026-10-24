@@ -108,9 +108,7 @@ impl Header {
 impl RecipientRecord {
     fn from_fb(record: fb::RecipientRecord<'_>) -> RecipientRecord {
         let capsule = if let Some(c) = record.capsule_as_recipients_symmetric_key_capsule() {
-            Capsule::Symmetric(SymmetricKeyCapsule {
-                salt: c.salt().bytes().to_vec(),
-            })
+            symmetric_capsule_from_fb(c)
         } else if let Some(c) = record.capsule_as_recipients_pbkdf2_capsule() {
             password_capsule_from_fb(c)
         } else {
@@ -135,17 +133,7 @@ impl RecipientRecord {
         fbb: &mut FlatBufferBuilder<'a>,
     ) -> Result<WIPOffset<fb::RecipientRecord<'a>>, SerializeError> {
         let (capsule_type, capsule) = match &self.capsule {
-            Capsule::Symmetric(c) => {
-                let salt = fbb.create_vector(&c.salt);
-                let capsule = fb_rec::SymmetricKeyCapsule::create(
-                    fbb,
-                    &fb_rec::SymmetricKeyCapsuleArgs { salt: Some(salt) },
-                );
-                (
-                    fb::Capsule::recipients_SymmetricKeyCapsule,
-                    capsule.as_union_value(),
-                )
-            }
+            Capsule::Symmetric(c) => symmetric_capsule_to_fb(fbb, c),
             Capsule::Password(c) => password_capsule_to_fb(fbb, c)?,
             Capsule::Unsupported => return Err(SerializeError::UnsupportedCapsule),
         };
@@ -170,6 +158,27 @@ impl RecipientRecord {
             },
         ))
     }
+}
+
+fn symmetric_capsule_from_fb(capsule: fb_rec::SymmetricKeyCapsule<'_>) -> Capsule {
+    Capsule::Symmetric(SymmetricKeyCapsule {
+        salt: capsule.salt().bytes().to_vec(),
+    })
+}
+
+fn symmetric_capsule_to_fb(
+    fbb: &mut FlatBufferBuilder<'_>,
+    capsule: &SymmetricKeyCapsule,
+) -> (fb::Capsule, WIPOffset<UnionWIPOffset>) {
+    let salt = fbb.create_vector(&capsule.salt);
+    let offset = fb_rec::SymmetricKeyCapsule::create(
+        fbb,
+        &fb_rec::SymmetricKeyCapsuleArgs { salt: Some(salt) },
+    );
+    (
+        fb::Capsule::recipients_SymmetricKeyCapsule,
+        offset.as_union_value(),
+    )
 }
 
 fn password_capsule_from_fb(capsule: fb_rec::PBKDF2Capsule<'_>) -> Capsule {
