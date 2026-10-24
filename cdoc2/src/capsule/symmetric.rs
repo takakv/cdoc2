@@ -20,15 +20,19 @@ impl SymmetricKeyCapsule {
     }
 
     pub fn derive_kek(&self, key: &[u8], key_label: &str) -> [u8; FMK_LEN] {
-        let hk = Hkdf::new(Some(&self.salt), key);
-        let mut kek = [0u8; FMK_LEN];
-        hk.expand_multi_info(
-            &[b"CDOC20kek", ALG_ID.as_bytes(), key_label.as_bytes()],
-            &mut kek,
-        )
-        .expect("32 is a valid length for Sha256 to output");
-        kek
+        derive_symmetric_kek(&self.salt, key, key_label)
     }
+}
+
+pub(crate) fn derive_symmetric_kek(salt: &[u8], key: &[u8], key_label: &str) -> [u8; FMK_LEN] {
+    let hk = Hkdf::new(Some(salt), key);
+    let mut kek = [0u8; FMK_LEN];
+    hk.expand_multi_info(
+        &[b"CDOC20kek", ALG_ID.as_bytes(), key_label.as_bytes()],
+        &mut kek,
+    )
+    .expect("32 is a valid length for Sha256 to output");
+    kek
 }
 
 fn xor(a: &[u8; FMK_LEN], b: &[u8; FMK_LEN]) -> [u8; FMK_LEN] {
