@@ -1,3 +1,5 @@
+use std::io::{self, Read};
+
 use crate::crypto::HMAC_LEN;
 use crate::header::{Header, HeaderError};
 
@@ -5,11 +7,16 @@ const PRELUDE: &[u8; 4] = b"CDOC";
 const VERSION: u8 = 2;
 const MAX_HEADER_LEN: usize = 1 << 20;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContainerHead {
+    pub header: Header,
+    pub header_bytes: Vec<u8>,
+    pub header_hmac: [u8; HMAC_LEN],
+}
+
 #[derive(Debug, Clone)]
 pub struct Container<'a> {
-    pub header: Header,
-    pub header_bytes: &'a [u8],
-    pub header_hmac: &'a [u8; HMAC_LEN],
+    pub head: ContainerHead,
     pub payload: &'a [u8],
 }
 
@@ -23,44 +30,67 @@ pub enum ContainerError {
     InvalidHeaderLength,
     #[error("container is truncated")]
     Truncated,
+    #[error("cannot read container: {0}")]
+    Read(String),
     #[error(transparent)]
     Header(#[from] HeaderError),
 }
 
-impl<'a> Container<'a> {
-    pub fn parse(bytes: &'a [u8]) -> Result<Self, ContainerError> {
-        let rest = bytes
-            .strip_prefix(PRELUDE)
-            .ok_or(ContainerError::NotCdoc2)?;
+impl ContainerHead {
+    pub fn read(reader: &mut impl Read) -> Result<Self, ContainerError> {
+        let mut prelude = Vec::with_capacity(PRELUDE.len());
+        reader
+            .by_ref()
+            .take(PRELUDE.len() as u64)
+            .read_to_end(&mut prelude)
+            .map_err(read_error)?;
+        if prelude != PRELUDE {
+            return Err(ContainerError::NotCdoc2);
+        }
 
-        let (&version, rest) = rest.split_first().ok_or(ContainerError::Truncated)?;
+        let [version] = read_array(reader)?;
         if version != VERSION {
             return Err(ContainerError::UnsupportedVersion(version));
         }
 
-        let (header_len, rest) = rest
-            .split_first_chunk::<4>()
-            .ok_or(ContainerError::Truncated)?;
-        let header_len = usize::try_from(i32::from_be_bytes(*header_len))
+        let header_len = usize::try_from(i32::from_be_bytes(read_array(reader)?))
             .ok()
             .filter(|&len| len <= MAX_HEADER_LEN)
             .ok_or(ContainerError::InvalidHeaderLength)?;
 
-        let (header_bytes, rest) = rest
-            .split_at_checked(header_len)
-            .ok_or(ContainerError::Truncated)?;
-        let (header_hmac, payload) = rest
-            .split_first_chunk::<HMAC_LEN>()
-            .ok_or(ContainerError::Truncated)?;
+        let mut header_bytes = vec![0; header_len];
+        reader.read_exact(&mut header_bytes).map_err(read_error)?;
+        let header_hmac = read_array(reader)?;
 
-        let header = Header::parse(header_bytes)?;
+        let header = Header::parse(&header_bytes)?;
 
-        Ok(Container {
+        Ok(ContainerHead {
             header,
             header_bytes,
             header_hmac,
-            payload,
         })
+    }
+}
+
+impl<'a> Container<'a> {
+    pub fn parse(bytes: &'a [u8]) -> Result<Self, ContainerError> {
+        let mut payload = bytes;
+        let head = ContainerHead::read(&mut payload)?;
+        Ok(Container { head, payload })
+    }
+}
+
+fn read_array<const N: usize>(reader: &mut impl Read) -> Result<[u8; N], ContainerError> {
+    let mut bytes = [0; N];
+    reader.read_exact(&mut bytes).map_err(read_error)?;
+    Ok(bytes)
+}
+
+fn read_error(e: io::Error) -> ContainerError {
+    if e.kind() == io::ErrorKind::UnexpectedEof {
+        ContainerError::Truncated
+    } else {
+        ContainerError::Read(e.to_string())
     }
 }
 

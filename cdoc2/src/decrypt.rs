@@ -73,7 +73,7 @@ fn check_encryption_methods(
     if record.fmk_encryption_method != FmkEncryptionMethod::Xor {
         return Err(DecryptError::UnsupportedFmkEncryptionMethod);
     }
-    check_payload_encryption_method(&container.header)?;
+    check_payload_encryption_method(&container.head.header)?;
     Ok(())
 }
 
@@ -89,8 +89,12 @@ fn decrypt_with_kek(
         .try_into()
         .map_err(|_| DecryptError::InvalidEncryptedFmkLength(record.encrypted_fmk.len()))?;
     let fmk = decrypt_fmk(encrypted_fmk, kek);
-    let header = authenticate_header(fmk, container.header_bytes, container.header_hmac)
-        .map_err(|_| DecryptError::HmacMismatch)?;
+    let header = authenticate_header(
+        fmk,
+        &container.head.header_bytes,
+        &container.head.header_hmac,
+    )
+    .map_err(|_| DecryptError::HmacMismatch)?;
     let payload = decrypt_payload(&header, container.payload)?;
     Ok(archive::unpack(&payload, max_size)?)
 }
