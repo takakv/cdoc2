@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use crate::archive::{File, FileNameError, pack};
+use crate::capsule::ecc::{self, EcPublicKey};
 use crate::capsule::{password, symmetric};
 use crate::container::write_container;
 use crate::crypto::{compute_header_hmac, generate_fmk, random_bytes};
@@ -18,14 +19,18 @@ pub enum Recipient<'a> {
         key_label: &'a str,
         password: &'a str,
     },
+    EcPublicKey {
+        key_label: &'a str,
+        public_key: &'a EcPublicKey,
+    },
 }
 
 impl Recipient<'_> {
     pub fn key_label(&self) -> &str {
         match *self {
-            Recipient::Symmetric { key_label, .. } | Recipient::Password { key_label, .. } => {
-                key_label
-            }
+            Recipient::Symmetric { key_label, .. }
+            | Recipient::Password { key_label, .. }
+            | Recipient::EcPublicKey { key_label, .. } => key_label,
         }
     }
 }
@@ -67,6 +72,10 @@ pub fn encrypt(files: &[File], recipients: &[Recipient]) -> Result<Vec<u8>, Encr
                 key_label,
                 password,
             } => password::recipient_record(password, key_label, &fmk),
+            Recipient::EcPublicKey {
+                key_label,
+                public_key,
+            } => ecc::recipient_record(public_key, key_label, &fmk),
         };
         records.push(record.map_err(random_error)?);
     }
