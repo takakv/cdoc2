@@ -12,9 +12,11 @@ pub(crate) const TAG_LEN: usize = 16;
 const CHACHA20_BLOCK_LEN: u64 = 64;
 const MAX_MESSAGE_LEN: u64 = (u32::MAX as u64 - 1) * CHACHA20_BLOCK_LEN;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum AeadError {
+    #[error("message is too long")]
     MessageTooLong,
+    #[error("tag mismatch")]
     TagMismatch,
 }
 

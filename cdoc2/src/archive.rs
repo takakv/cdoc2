@@ -13,6 +13,12 @@ pub struct File {
     pub data: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileEntry<'a> {
+    pub name: &'a str,
+    pub size: u64,
+}
+
 pub trait Sink {
     fn create_file(&mut self, name: &str) -> io::Result<()>;
     fn append(&mut self, data: &[u8]) -> io::Result<()>;
@@ -177,36 +183,58 @@ fn trailing_data() -> UnpackError {
 
 const USTAR_NAME_LEN: usize = 100;
 const USTAR_MAX_SIZE: u64 = 0o777_7777_7777;
-const IN_MEMORY: &str = "writing to memory should not fail";
+const COPY_SIZE: usize = 64 * 1024;
 
-pub fn pack(files: &[File]) -> Result<Vec<u8>, FileNameError> {
+pub(crate) enum PackError {
+    Read { name: String, error: io::Error },
+    SizeChanged(String),
+    Write(io::Error),
+}
+
+impl From<io::Error> for PackError {
+    fn from(error: io::Error) -> Self {
+        PackError::Write(error)
+    }
+}
+
+pub(crate) fn check_file_names(files: &[FileEntry]) -> Result<(), FileNameError> {
     let mut names = HashSet::new();
     for file in files {
-        check_file_name(&file.name, &mut names)?;
+        check_file_name(file.name, &mut names)?;
     }
+    Ok(())
+}
 
+pub(crate) fn pack<R: Read, W: Write>(
+    files: &[FileEntry],
+    mut open: impl FnMut(usize) -> io::Result<R>,
+    out: W,
+) -> Result<W, PackError> {
     let mtime = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
-    let mut builder = tar::Builder::new(ZlibEncoder::new(Vec::new(), Compression::default()));
-    for file in files {
-        append_file(&mut builder, file, mtime).expect(IN_MEMORY);
+
+    let mut builder = tar::Builder::new(ZlibEncoder::new(out, Compression::default()));
+    for (i, file) in files.iter().enumerate() {
+        let mut data = open(i).map_err(|error| read_error(file, error))?;
+        append_headers(&mut builder, file, mtime)?;
+        append_data(builder.get_mut(), file, &mut data)?;
     }
-    Ok(builder
-        .into_inner()
-        .and_then(ZlibEncoder::finish)
-        .expect(IN_MEMORY))
+    Ok(builder.into_inner()?.finish()?)
 }
 
-fn append_file(builder: &mut tar::Builder<impl Write>, file: &File, mtime: u64) -> io::Result<()> {
-    let size = file.data.len() as u64;
-    let size_record = size.to_string();
+fn append_headers(
+    builder: &mut tar::Builder<impl Write>,
+    file: &FileEntry,
+    mtime: u64,
+) -> io::Result<()> {
+    let size_record = file.size.to_string();
 
     let mut pax: Vec<(&str, &[u8])> = Vec::new();
     if !file.name.is_ascii() || file.name.len() > USTAR_NAME_LEN {
         pax.push(("path", file.name.as_bytes()));
     }
-    if size > USTAR_MAX_SIZE {
+    if file.size > USTAR_MAX_SIZE {
         pax.push(("size", size_record.as_bytes()));
     }
     builder.append_pax_extensions(pax)?;
@@ -217,11 +245,48 @@ fn append_file(builder: &mut tar::Builder<impl Write>, file: &File, mtime: u64) 
     let mut header = Header::new_ustar();
     header.as_ustar_mut().expect("header should be ustar").name[..name.len()].copy_from_slice(name);
     header.set_entry_type(EntryType::Regular);
-    header.set_size(size);
+    header.set_size(file.size);
     header.set_mode(0o644);
     header.set_mtime(mtime);
     header.set_cksum();
-    builder.append(&header, file.data.as_slice())
+    builder.get_mut().write_all(header.as_bytes())
+}
+
+fn append_data(
+    out: &mut impl Write,
+    file: &FileEntry,
+    data: &mut impl Read,
+) -> Result<(), PackError> {
+    let mut buf = vec![0; COPY_SIZE];
+    let mut remaining = file.size;
+    while remaining > 0 {
+        let chunk = &mut buf[..remaining.min(COPY_SIZE as u64) as usize];
+        data.read_exact(chunk).map_err(|error| {
+            if error.kind() == io::ErrorKind::UnexpectedEof {
+                PackError::SizeChanged(file.name.to_owned())
+            } else {
+                read_error(file, error)
+            }
+        })?;
+        out.write_all(chunk)?;
+        remaining -= chunk.len() as u64;
+    }
+    match data.read_exact(&mut [0]) {
+        Ok(()) => return Err(PackError::SizeChanged(file.name.to_owned())),
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => {}
+        Err(error) => return Err(read_error(file, error)),
+    }
+
+    let padding = file.size.next_multiple_of(BLOCK_SIZE) - file.size;
+    out.write_all(&[0; BLOCK_SIZE as usize][..padding as usize])?;
+    Ok(())
+}
+
+fn read_error(file: &FileEntry, error: io::Error) -> PackError {
+    PackError::Read {
+        name: file.name.to_owned(),
+        error,
+    }
 }
 
 const FORBIDDEN_CHARS: [char; 8] = ['<', '>', ':', '\\', '/', '|', '?', '*'];

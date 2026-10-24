@@ -94,10 +94,9 @@ fn read_error(e: io::Error) -> ContainerError {
     }
 }
 
-pub(crate) fn write_container(
+pub(crate) fn encode_head(
     header_bytes: &[u8],
     header_hmac: &[u8; HMAC_LEN],
-    payload: &[u8],
 ) -> Result<Vec<u8>, ContainerError> {
     if header_bytes.len() > MAX_HEADER_LEN {
         return Err(ContainerError::InvalidHeaderLength);
@@ -105,13 +104,12 @@ pub(crate) fn write_container(
     let header_len =
         i32::try_from(header_bytes.len()).expect("MAX_HEADER_LEN should fit in an i32");
 
-    let parts: [&[u8]; 6] = [
+    let parts: [&[u8]; 5] = [
         PRELUDE,
         &[VERSION],
         &header_len.to_be_bytes(),
         header_bytes,
         header_hmac,
-        payload,
     ];
     Ok(parts.concat())
 }

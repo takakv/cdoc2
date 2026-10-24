@@ -1,4 +1,4 @@
-use std::io::{self, Read, Seek, SeekFrom, Take};
+use std::io::{self, Read, Seek, SeekFrom, Take, Write};
 
 use crate::aead_stream::{AeadError, Decryptor, Encryptor, NONCE_LEN, TAG_LEN, Verifier};
 use crate::crypto::{AuthenticatedHeader, FMK_LEN, HMAC_LEN, derive_cek};
@@ -32,24 +32,50 @@ fn payload_aad(header_bytes: &[u8], header_hmac: &[u8; HMAC_LEN]) -> Vec<u8> {
     .concat()
 }
 
-pub(crate) fn encrypt_payload(
-    fmk: &[u8; FMK_LEN],
-    header_bytes: &[u8],
-    header_hmac: &[u8; HMAC_LEN],
-    nonce: &[u8; NONCE_LEN],
-    plaintext: &[u8],
-) -> Result<Vec<u8>, AeadError> {
-    let mut encryptor = Encryptor::new(
-        &derive_cek(fmk),
-        nonce,
-        &payload_aad(header_bytes, header_hmac),
-    );
-    let mut payload = Vec::with_capacity(NONCE_LEN + plaintext.len() + TAG_LEN);
-    payload.extend_from_slice(nonce);
-    payload.extend_from_slice(plaintext);
-    encryptor.encrypt(&mut payload[NONCE_LEN..])?;
-    payload.extend_from_slice(&encryptor.finalize());
-    Ok(payload)
+pub(crate) struct PayloadWriter<W> {
+    inner: W,
+    encryptor: Encryptor,
+    buf: Vec<u8>,
+}
+
+impl<W: Write> PayloadWriter<W> {
+    pub(crate) fn new(
+        fmk: &[u8; FMK_LEN],
+        header_bytes: &[u8],
+        header_hmac: &[u8; HMAC_LEN],
+        nonce: &[u8; NONCE_LEN],
+        mut inner: W,
+    ) -> io::Result<Self> {
+        inner.write_all(nonce)?;
+        let aad = payload_aad(header_bytes, header_hmac);
+        Ok(PayloadWriter {
+            inner,
+            encryptor: Encryptor::new(&derive_cek(fmk), nonce, &aad),
+            buf: Vec::new(),
+        })
+    }
+
+    pub(crate) fn finish(mut self) -> io::Result<W> {
+        let tag = self.encryptor.finalize();
+        self.inner.write_all(&tag)?;
+        Ok(self.inner)
+    }
+}
+
+impl<W: Write> Write for PayloadWriter<W> {
+    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        self.buf.clear();
+        self.buf.extend_from_slice(data);
+        self.encryptor
+            .encrypt(&mut self.buf)
+            .map_err(io::Error::other)?;
+        self.inner.write_all(&self.buf)?;
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 const READ_SIZE: usize = 64 * 1024;

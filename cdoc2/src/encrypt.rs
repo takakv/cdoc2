@@ -1,13 +1,14 @@
 use std::collections::HashSet;
+use std::io::{self, Read, Write};
 
-use crate::aead_stream::NONCE_LEN;
-use crate::archive::{File, FileNameError, pack};
+use crate::aead_stream::{AeadError, NONCE_LEN};
+use crate::archive::{File, FileEntry, FileNameError, PackError, check_file_names, pack};
 use crate::capsule::ecc::{self, EcPublicKey};
 use crate::capsule::{password, symmetric};
-use crate::container::write_container;
+use crate::container::encode_head;
 use crate::crypto::{compute_header_hmac, generate_fmk, random_bytes};
 use crate::header::{Header, PayloadEncryptionMethod};
-use crate::payload::encrypt_payload;
+use crate::payload::PayloadWriter;
 
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
@@ -52,15 +53,46 @@ pub enum EncryptError {
     PayloadTooLarge,
     #[error("could not generate random bytes: {0}")]
     Random(String),
+    #[error("cannot read {name:?}: {message}")]
+    Read { name: String, message: String },
+    #[error("{0:?} changed size while being read")]
+    SizeChanged(String),
+    #[error("cannot write container: {0}")]
+    Write(String),
 }
 
 pub fn encrypt(files: &[File], recipients: &[Recipient]) -> Result<Vec<u8>, EncryptError> {
+    let entries: Vec<_> = files
+        .iter()
+        .map(|file| FileEntry {
+            name: &file.name,
+            size: file.data.len() as u64,
+        })
+        .collect();
+    let mut container = Vec::new();
+    encrypt_into(
+        &entries,
+        |i| Ok(files[i].data.as_slice()),
+        recipients,
+        &mut container,
+    )?;
+    Ok(container)
+}
+
+/// Calls `open(i)` once for each file, in order, and expects exactly `files[i].size` bytes from
+/// it. The output is only a valid container if this returns `Ok`.
+pub fn encrypt_into<R: Read>(
+    files: &[FileEntry],
+    open: impl FnMut(usize) -> io::Result<R>,
+    recipients: &[Recipient],
+    mut out: impl Write,
+) -> Result<(), EncryptError> {
     if recipients.is_empty() {
         return Err(EncryptError::NoRecipients);
     }
     check_key_labels(recipients)?;
+    check_file_names(files)?;
 
-    let tar = pack(files)?;
     let fmk = generate_fmk().map_err(random_error)?;
 
     let mut records = Vec::with_capacity(recipients.len());
@@ -90,15 +122,41 @@ pub fn encrypt(files: &[File], recipients: &[Recipient]) -> Result<Vec<u8>, Encr
         .expect("headers built for encryption should be serializable");
     let header_hmac = compute_header_hmac(&fmk, &header_bytes);
 
-    let nonce = random_bytes::<NONCE_LEN>().map_err(random_error)?;
-    let payload = encrypt_payload(&fmk, &header_bytes, &header_hmac, &nonce, &tar)
-        .map_err(|_| EncryptError::PayloadTooLarge)?;
+    let head =
+        encode_head(&header_bytes, &header_hmac).map_err(|_| EncryptError::HeaderTooLarge)?;
 
-    write_container(&header_bytes, &header_hmac, &payload).map_err(|_| EncryptError::HeaderTooLarge)
+    let nonce = random_bytes::<NONCE_LEN>().map_err(random_error)?;
+    out.write_all(&head).map_err(write_error)?;
+    let payload =
+        PayloadWriter::new(&fmk, &header_bytes, &header_hmac, &nonce, out).map_err(write_error)?;
+    let payload = pack(files, open, payload).map_err(pack_error)?;
+    payload
+        .finish()
+        .and_then(|mut out| out.flush())
+        .map_err(write_error)
 }
 
 fn random_error(e: getrandom::Error) -> EncryptError {
     EncryptError::Random(e.to_string())
+}
+
+fn pack_error(e: PackError) -> EncryptError {
+    match e {
+        PackError::Read { name, error } => EncryptError::Read {
+            name,
+            message: error.to_string(),
+        },
+        PackError::SizeChanged(name) => EncryptError::SizeChanged(name),
+        PackError::Write(error) => write_error(error),
+    }
+}
+
+fn write_error(e: io::Error) -> EncryptError {
+    if e.get_ref().is_some_and(|e| e.is::<AeadError>()) {
+        EncryptError::PayloadTooLarge
+    } else {
+        EncryptError::Write(e.to_string())
+    }
 }
 
 fn check_key_labels(recipients: &[Recipient]) -> Result<(), EncryptError> {
