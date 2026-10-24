@@ -34,20 +34,39 @@ pub fn decrypt_with_symmetric_key(
     let Capsule::Symmetric(capsule) = &record.capsule else {
         return Err(DecryptError::KeyTypeMismatch);
     };
+    check_fmk_encryption_method(record)?;
+    let kek = capsule.derive_kek(key, &record.key_label);
+    decrypt_with_kek(container, record, &kek, max_size)
+}
+
+pub fn decrypt_with_password(
+    container: &Container,
+    record: &RecipientRecord,
+    password: &str,
+    max_size: u64,
+) -> Result<Vec<File>, DecryptError> {
+    let Capsule::Password(capsule) = &record.capsule else {
+        return Err(DecryptError::KeyTypeMismatch);
+    };
+    check_fmk_encryption_method(record)?;
+    let kek = capsule.derive_kek(password, &record.key_label);
+    decrypt_with_kek(container, record, &kek, max_size)
+}
+
+fn check_fmk_encryption_method(record: &RecipientRecord) -> Result<(), DecryptError> {
     if record.fmk_encryption_method != FmkEncryptionMethod::Xor {
         return Err(DecryptError::UnsupportedFmkEncryptionMethod);
     }
-
-    let kek = capsule.derive_kek(key, &record.key_label);
-    let fmk = decrypt_fmk(&record.encrypted_fmk, &kek)?;
-    decrypt_with_fmk(container, &fmk, max_size)
+    Ok(())
 }
 
-fn decrypt_with_fmk(
+fn decrypt_with_kek(
     container: &Container,
-    fmk: &[u8; FMK_LEN],
+    record: &RecipientRecord,
+    kek: &[u8; FMK_LEN],
     max_size: u64,
 ) -> Result<Vec<File>, DecryptError> {
-    let payload = container.decrypt_payload(fmk)?;
+    let fmk = decrypt_fmk(&record.encrypted_fmk, kek)?;
+    let payload = container.decrypt_payload(&fmk)?;
     Ok(archive::unpack(&payload, max_size)?)
 }
