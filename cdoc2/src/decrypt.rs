@@ -6,7 +6,9 @@ use crate::capsule::{Capsule, decrypt_fmk};
 use crate::container::{Container, ContainerHead};
 use crate::crypto::{AuthenticatedHeader, FMK_LEN, authenticate_header};
 use crate::header::{FmkEncryptionMethod, RecipientRecord};
-use crate::payload::{PayloadError, PayloadReader, check_payload_encryption_method};
+use crate::payload::{
+    PayloadError, PayloadReader, check_payload_encryption_method, verify_payload,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DecryptError {
@@ -57,19 +59,30 @@ pub fn decrypt_into(
     head: &ContainerHead,
     record: &RecipientRecord,
     key: &DecryptionKey,
-    payload: impl Read + Seek,
+    mut payload: impl Read + Seek,
     max_size: u64,
     sink: &mut impl Sink,
 ) -> Result<(), DecryptError> {
     let header = authenticate(head, record, key)?;
-    let mut payload = PayloadReader::new(&header, payload)?;
+    verify_payload(&header, &mut payload)?;
+    decrypt_payload(&header, payload, max_size, sink)
+}
+
+pub(crate) fn decrypt_payload(
+    header: &AuthenticatedHeader,
+    payload: impl Read + Seek,
+    max_size: u64,
+    sink: &mut impl Sink,
+) -> Result<(), DecryptError> {
+    let mut payload = PayloadReader::new(header, payload)?;
     let unpacked = archive::unpack(&mut payload, max_size, sink);
-    // The payload can change between the two reads, so the tag must be checked again.
+    // The payload may be unverified, or may have changed since it was verified, so the tag
+    // must take priority over unpacking errors.
     payload.finish()?;
     Ok(unpacked?)
 }
 
-fn authenticate<'a>(
+pub(crate) fn authenticate<'a>(
     head: &'a ContainerHead,
     record: &RecipientRecord,
     key: &DecryptionKey,

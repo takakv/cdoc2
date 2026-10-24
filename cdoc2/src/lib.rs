@@ -7,6 +7,8 @@ pub mod container;
 pub mod crypto;
 pub mod decrypt;
 pub mod encrypt;
+#[cfg(feature = "hazmat")]
+pub mod hazmat;
 pub mod header;
 pub mod key_label;
 pub mod payload;
