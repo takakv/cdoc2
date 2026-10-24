@@ -1,13 +1,20 @@
 use crate::archive::{File, FileNameError, pack};
-use crate::capsule::symmetric::recipient_record;
+use crate::capsule::{password, symmetric};
 use crate::container::{NONCE_LEN, compute_header_hmac, encrypt_payload, write_container};
 use crate::crypto::{generate_fmk, random_bytes};
 use crate::header::{Header, PayloadEncryptionMethod};
 
 #[derive(Debug, Clone, Copy)]
-pub struct SymmetricRecipient<'a> {
-    pub key_label: &'a str,
-    pub key: &'a [u8],
+#[non_exhaustive]
+pub enum Recipient<'a> {
+    Symmetric {
+        key_label: &'a str,
+        key: &'a [u8],
+    },
+    Password {
+        key_label: &'a str,
+        password: &'a str,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -24,10 +31,7 @@ pub enum EncryptError {
     Random(String),
 }
 
-pub fn encrypt_with_symmetric_keys(
-    files: &[File],
-    recipients: &[SymmetricRecipient],
-) -> Result<Vec<u8>, EncryptError> {
+pub fn encrypt(files: &[File], recipients: &[Recipient]) -> Result<Vec<u8>, EncryptError> {
     if recipients.is_empty() {
         return Err(EncryptError::NoRecipients);
     }
@@ -37,7 +41,16 @@ pub fn encrypt_with_symmetric_keys(
 
     let mut records = Vec::with_capacity(recipients.len());
     for r in recipients {
-        records.push(recipient_record(r.key, r.key_label, &fmk).map_err(random_error)?);
+        let record = match *r {
+            Recipient::Symmetric { key_label, key } => {
+                symmetric::recipient_record(key, key_label, &fmk)
+            }
+            Recipient::Password {
+                key_label,
+                password,
+            } => password::recipient_record(password, key_label, &fmk),
+        };
+        records.push(record.map_err(random_error)?);
     }
 
     let header = Header {

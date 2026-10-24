@@ -1,6 +1,5 @@
 use crate::archive::{self, File, UnpackError};
-use crate::capsule::Capsule;
-use crate::capsule::symmetric::decrypt_fmk;
+use crate::capsule::{Capsule, decrypt_fmk};
 use crate::container::Container;
 use crate::crypto::FMK_LEN;
 use crate::header::{FmkEncryptionMethod, RecipientRecord};
