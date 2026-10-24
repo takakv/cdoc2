@@ -1,6 +1,8 @@
+pub mod ecc;
 pub mod password;
 pub mod symmetric;
 
+use ecc::EccPublicKeyCapsule;
 use password::Pbkdf2Capsule;
 use symmetric::SymmetricKeyCapsule;
 
@@ -11,6 +13,7 @@ use crate::header::{FmkEncryptionMethod, RecipientRecord};
 pub enum Capsule {
     Symmetric(SymmetricKeyCapsule),
     Password(Pbkdf2Capsule),
+    Ecc(EccPublicKeyCapsule),
     Unsupported,
 }
 

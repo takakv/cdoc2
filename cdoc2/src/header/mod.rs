@@ -5,6 +5,7 @@ mod generated;
 use flatbuffers::{FlatBufferBuilder, UnionWIPOffset, WIPOffset};
 
 use crate::capsule::Capsule;
+use crate::capsule::ecc::{EccPublicKeyCapsule, EllipticCurve};
 use crate::capsule::password::Pbkdf2Capsule;
 use crate::capsule::symmetric::SymmetricKeyCapsule;
 use generated::ee::cyber::cdoc_2::fbs::header as fb;
@@ -111,6 +112,8 @@ impl RecipientRecord {
             symmetric_capsule_from_fb(c)
         } else if let Some(c) = record.capsule_as_recipients_pbkdf2_capsule() {
             password_capsule_from_fb(c)
+        } else if let Some(c) = record.capsule_as_recipients_eccpublic_key_capsule() {
+            ecc_capsule_from_fb(c)
         } else {
             Capsule::Unsupported
         };
@@ -135,6 +138,7 @@ impl RecipientRecord {
         let (capsule_type, capsule) = match &self.capsule {
             Capsule::Symmetric(c) => symmetric_capsule_to_fb(fbb, c),
             Capsule::Password(c) => password_capsule_to_fb(fbb, c)?,
+            Capsule::Ecc(c) => ecc_capsule_to_fb(fbb, c),
             Capsule::Unsupported => return Err(SerializeError::UnsupportedCapsule),
         };
 
@@ -221,4 +225,45 @@ fn password_capsule_to_fb(
         fb::Capsule::recipients_PBKDF2Capsule,
         offset.as_union_value(),
     ))
+}
+
+fn ecc_capsule_from_fb(capsule: fb_rec::ECCPublicKeyCapsule<'_>) -> Capsule {
+    let curve = match capsule.curve() {
+        fb_rec::EllipticCurve::secp256r1 => EllipticCurve::Secp256r1,
+        fb_rec::EllipticCurve::secp384r1 => EllipticCurve::Secp384r1,
+        fb_rec::EllipticCurve::secp521r1 => EllipticCurve::Secp521r1,
+        _ => return Capsule::Unsupported,
+    };
+
+    Capsule::Ecc(EccPublicKeyCapsule {
+        curve,
+        recipient_public_key: capsule.recipient_public_key().bytes().to_vec(),
+        sender_public_key: capsule.sender_public_key().bytes().to_vec(),
+    })
+}
+
+fn ecc_capsule_to_fb(
+    fbb: &mut FlatBufferBuilder<'_>,
+    capsule: &EccPublicKeyCapsule,
+) -> (fb::Capsule, WIPOffset<UnionWIPOffset>) {
+    let curve = match capsule.curve {
+        EllipticCurve::Secp256r1 => fb_rec::EllipticCurve::secp256r1,
+        EllipticCurve::Secp384r1 => fb_rec::EllipticCurve::secp384r1,
+        EllipticCurve::Secp521r1 => fb_rec::EllipticCurve::secp521r1,
+    };
+
+    let recipient_public_key = fbb.create_vector(&capsule.recipient_public_key);
+    let sender_public_key = fbb.create_vector(&capsule.sender_public_key);
+    let offset = fb_rec::ECCPublicKeyCapsule::create(
+        fbb,
+        &fb_rec::ECCPublicKeyCapsuleArgs {
+            curve,
+            recipient_public_key: Some(recipient_public_key),
+            sender_public_key: Some(sender_public_key),
+        },
+    );
+    (
+        fb::Capsule::recipients_ECCPublicKeyCapsule,
+        offset.as_union_value(),
+    )
 }
