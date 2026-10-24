@@ -1,4 +1,5 @@
 use crate::archive::{self, File, UnpackError};
+use crate::capsule::ecc::{EcSecretKey, EccKekError};
 use crate::capsule::{Capsule, decrypt_fmk};
 use crate::container::Container;
 use crate::crypto::FMK_LEN;
@@ -15,6 +16,8 @@ pub enum DecryptError {
     InvalidEncryptedFmkLength(usize),
     #[error("header HMAC mismatch: wrong key or corrupted file")]
     HmacMismatch,
+    #[error(transparent)]
+    EccKek(#[from] EccKekError),
     #[error(transparent)]
     Payload(#[from] PayloadError),
     #[error(transparent)]
@@ -46,6 +49,20 @@ pub fn decrypt_with_password(
     };
     check_encryption_methods(container, record)?;
     let kek = capsule.derive_kek(password, &record.key_label);
+    decrypt_with_kek(container, record, &kek, max_size)
+}
+
+pub fn decrypt_with_ec_key(
+    container: &Container,
+    record: &RecipientRecord,
+    secret_key: &EcSecretKey,
+    max_size: u64,
+) -> Result<Vec<File>, DecryptError> {
+    let Capsule::Ecc(capsule) = &record.capsule else {
+        return Err(DecryptError::KeyTypeMismatch);
+    };
+    check_encryption_methods(container, record)?;
+    let kek = capsule.derive_kek(secret_key)?;
     decrypt_with_kek(container, record, &kek, max_size)
 }
 
