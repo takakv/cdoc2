@@ -1,8 +1,7 @@
 use pbkdf2::pbkdf2_hmac_array;
 use sha2::Sha256;
 
-use crate::capsule::symmetric::{SALT_LEN, derive_symmetric_kek};
-use crate::capsule::{Capsule, record_with_kek};
+use crate::capsule::{Capsule, SALT_LEN, derive_symmetric_kek, record_with_kek};
 use crate::crypto::{FMK_LEN, random_bytes};
 use crate::header::RecipientRecord;
 
