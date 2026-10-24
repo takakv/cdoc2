@@ -1,3 +1,4 @@
+use crate::archive::{self, File, UnpackError};
 use crate::capsule::Capsule;
 use crate::capsule::symmetric::decrypt_fmk;
 use crate::container::Container;
@@ -20,13 +21,16 @@ pub enum DecryptError {
     PayloadTooShort,
     #[error("payload decryption failed: corrupted or tampered payload")]
     PayloadDecryptionFailed,
+    #[error(transparent)]
+    Unpack(#[from] UnpackError),
 }
 
 pub fn decrypt_with_symmetric_key(
     container: &Container,
     record: &RecipientRecord,
     key: &[u8],
-) -> Result<Vec<u8>, DecryptError> {
+    max_size: u64,
+) -> Result<Vec<File>, DecryptError> {
     let Capsule::Symmetric(capsule) = &record.capsule else {
         return Err(DecryptError::KeyTypeMismatch);
     };
@@ -36,5 +40,14 @@ pub fn decrypt_with_symmetric_key(
 
     let kek = capsule.derive_kek(key, &record.key_label);
     let fmk = decrypt_fmk(&record.encrypted_fmk, &kek)?;
-    container.decrypt_payload(&fmk)
+    decrypt_with_fmk(container, &fmk, max_size)
+}
+
+fn decrypt_with_fmk(
+    container: &Container,
+    fmk: &[u8; FMK_LEN],
+    max_size: u64,
+) -> Result<Vec<File>, DecryptError> {
+    let payload = container.decrypt_payload(fmk)?;
+    Ok(archive::unpack(&payload, max_size)?)
 }
