@@ -5,7 +5,6 @@ use password::Pbkdf2Capsule;
 use symmetric::SymmetricKeyCapsule;
 
 use crate::crypto::FMK_LEN;
-use crate::decrypt::DecryptError;
 use crate::header::{FmkEncryptionMethod, RecipientRecord};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,14 +18,8 @@ pub fn encrypt_fmk(fmk: &[u8; FMK_LEN], kek: &[u8; FMK_LEN]) -> [u8; FMK_LEN] {
     xor(fmk, kek)
 }
 
-pub fn decrypt_fmk(
-    encrypted_fmk: &[u8],
-    kek: &[u8; FMK_LEN],
-) -> Result<[u8; FMK_LEN], DecryptError> {
-    let encrypted_fmk: &[u8; FMK_LEN] = encrypted_fmk
-        .try_into()
-        .map_err(|_| DecryptError::InvalidEncryptedFmkLength(encrypted_fmk.len()))?;
-    Ok(xor(encrypted_fmk, kek))
+pub fn decrypt_fmk(encrypted_fmk: &[u8; FMK_LEN], kek: &[u8; FMK_LEN]) -> [u8; FMK_LEN] {
+    xor(encrypted_fmk, kek)
 }
 
 pub(crate) fn record_with_kek(

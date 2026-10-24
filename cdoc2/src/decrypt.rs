@@ -1,6 +1,6 @@
 use crate::archive::{self, File, UnpackError};
 use crate::capsule::{Capsule, decrypt_fmk};
-use crate::container::Container;
+use crate::container::{Container, PayloadError};
 use crate::crypto::FMK_LEN;
 use crate::header::{FmkEncryptionMethod, RecipientRecord};
 
@@ -12,14 +12,8 @@ pub enum DecryptError {
     UnsupportedFmkEncryptionMethod,
     #[error("encrypted FMK must be {FMK_LEN} bytes, got {0}")]
     InvalidEncryptedFmkLength(usize),
-    #[error("header HMAC mismatch: wrong key or corrupted file")]
-    HmacMismatch,
-    #[error("unsupported payload encryption method")]
-    UnsupportedPayloadEncryptionMethod,
-    #[error("payload is too short")]
-    PayloadTooShort,
-    #[error("payload decryption failed: corrupted or tampered payload")]
-    PayloadDecryptionFailed,
+    #[error(transparent)]
+    Payload(#[from] PayloadError),
     #[error(transparent)]
     Unpack(#[from] UnpackError),
 }
@@ -65,7 +59,12 @@ fn decrypt_with_kek(
     kek: &[u8; FMK_LEN],
     max_size: u64,
 ) -> Result<Vec<File>, DecryptError> {
-    let fmk = decrypt_fmk(&record.encrypted_fmk, kek)?;
+    let encrypted_fmk = record
+        .encrypted_fmk
+        .as_slice()
+        .try_into()
+        .map_err(|_| DecryptError::InvalidEncryptedFmkLength(record.encrypted_fmk.len()))?;
+    let fmk = decrypt_fmk(encrypted_fmk, kek);
     let payload = container.decrypt_payload(&fmk)?;
     Ok(archive::unpack(&payload, max_size)?)
 }

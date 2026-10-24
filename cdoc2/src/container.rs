@@ -3,7 +3,6 @@ use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 use hmac::{KeyInit, Mac};
 
 use crate::crypto::{FMK_LEN, Hkdf, Hmac};
-use crate::decrypt::DecryptError;
 use crate::header::{Header, HeaderError, PayloadEncryptionMethod};
 
 const PRELUDE: &[u8; 4] = b"CDOC";
@@ -35,6 +34,18 @@ pub enum ContainerError {
     Truncated,
     #[error(transparent)]
     Header(#[from] HeaderError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PayloadError {
+    #[error("header HMAC mismatch: wrong key or corrupted file")]
+    HmacMismatch,
+    #[error("unsupported payload encryption method")]
+    UnsupportedPayloadEncryptionMethod,
+    #[error("payload is too short")]
+    TooShort,
+    #[error("payload decryption failed: corrupted or tampered payload")]
+    DecryptionFailed,
 }
 
 impl<'a> Container<'a> {
@@ -73,28 +84,28 @@ impl<'a> Container<'a> {
         })
     }
 
-    pub fn verify_header_hmac(&self, fmk: &[u8; FMK_LEN]) -> Result<(), DecryptError> {
+    pub fn verify_header_hmac(&self, fmk: &[u8; FMK_LEN]) -> Result<(), PayloadError> {
         header_mac(fmk, self.header_bytes)
             .verify_slice(self.header_hmac)
-            .map_err(|_| DecryptError::HmacMismatch)
+            .map_err(|_| PayloadError::HmacMismatch)
     }
 
-    pub fn decrypt_payload(&self, fmk: &[u8; FMK_LEN]) -> Result<Vec<u8>, DecryptError> {
+    pub fn decrypt_payload(&self, fmk: &[u8; FMK_LEN]) -> Result<Vec<u8>, PayloadError> {
         if self.header.payload_encryption_method != PayloadEncryptionMethod::ChaCha20Poly1305 {
-            return Err(DecryptError::UnsupportedPayloadEncryptionMethod);
+            return Err(PayloadError::UnsupportedPayloadEncryptionMethod);
         }
 
         self.verify_header_hmac(fmk)?;
 
         if self.payload.len() < NONCE_LEN + TAG_LEN {
-            return Err(DecryptError::PayloadTooShort);
+            return Err(PayloadError::TooShort);
         }
 
         let cipher = payload_cipher(fmk);
         let (nonce, ciphertext) = self
             .payload
             .split_first_chunk::<NONCE_LEN>()
-            .ok_or(DecryptError::PayloadTooShort)?;
+            .ok_or(PayloadError::TooShort)?;
 
         cipher
             .decrypt(
@@ -104,7 +115,7 @@ impl<'a> Container<'a> {
                     aad: &payload_aad(self.header_bytes, self.header_hmac),
                 },
             )
-            .map_err(|_| DecryptError::PayloadDecryptionFailed)
+            .map_err(|_| PayloadError::DecryptionFailed)
     }
 }
 
