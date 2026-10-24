@@ -1,9 +1,7 @@
 use chacha20poly1305::aead::{Aead, Payload};
 use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce};
-use hmac::digest::MacError;
 
-use crate::container::Container;
-use crate::crypto::{FMK_LEN, HMAC_LEN, derive_cek, verify_header_hmac};
+use crate::crypto::{AuthenticatedHeader, FMK_LEN, HMAC_LEN, derive_cek};
 use crate::header::{Header, PayloadEncryptionMethod};
 
 pub(crate) const NONCE_LEN: usize = 12;
@@ -56,35 +54,22 @@ pub(crate) fn encrypt_payload(
     Ok([nonce.as_slice(), &ciphertext].concat())
 }
 
-pub(crate) struct PayloadDecryptor<'a> {
-    container: &'a Container<'a>,
-    fmk: [u8; FMK_LEN],
-}
+pub(crate) fn decrypt_payload(
+    header: &AuthenticatedHeader,
+    payload: &[u8],
+) -> Result<Vec<u8>, PayloadError> {
+    let (nonce, ciphertext) = payload
+        .split_first_chunk::<NONCE_LEN>()
+        .filter(|(_, ciphertext)| ciphertext.len() >= TAG_LEN)
+        .ok_or(PayloadError::TooShort)?;
 
-impl<'a> PayloadDecryptor<'a> {
-    pub(crate) fn new(container: &'a Container<'a>, fmk: [u8; FMK_LEN]) -> Result<Self, MacError> {
-        verify_header_hmac(&fmk, container.header_bytes, container.header_hmac)?;
-        Ok(PayloadDecryptor { container, fmk })
-    }
-
-    pub(crate) fn decrypt(&self) -> Result<Vec<u8>, PayloadError> {
-        let container = self.container;
-        check_payload_encryption_method(&container.header)?;
-
-        let (nonce, ciphertext) = container
-            .payload
-            .split_first_chunk::<NONCE_LEN>()
-            .filter(|(_, ciphertext)| ciphertext.len() >= TAG_LEN)
-            .ok_or(PayloadError::TooShort)?;
-
-        payload_cipher(&self.fmk)
-            .decrypt(
-                &Nonce::from(*nonce),
-                Payload {
-                    msg: ciphertext,
-                    aad: &payload_aad(container.header_bytes, container.header_hmac),
-                },
-            )
-            .map_err(|_| PayloadError::DecryptionFailed)
-    }
+    payload_cipher(header.fmk())
+        .decrypt(
+            &Nonce::from(*nonce),
+            Payload {
+                msg: ciphertext,
+                aad: &payload_aad(header.header_bytes(), header.header_hmac()),
+            },
+        )
+        .map_err(|_| PayloadError::DecryptionFailed)
 }

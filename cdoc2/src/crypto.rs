@@ -35,12 +35,37 @@ pub(crate) fn compute_header_hmac(fmk: &[u8; FMK_LEN], header_bytes: &[u8]) -> [
     header_mac(fmk, header_bytes).finalize().into_bytes().into()
 }
 
-pub(crate) fn verify_header_hmac(
-    fmk: &[u8; FMK_LEN],
-    header_bytes: &[u8],
-    header_hmac: &[u8; HMAC_LEN],
-) -> Result<(), MacError> {
-    header_mac(fmk, header_bytes).verify_slice(header_hmac)
+pub(crate) struct AuthenticatedHeader<'a> {
+    fmk: [u8; FMK_LEN],
+    header_bytes: &'a [u8],
+    header_hmac: &'a [u8; HMAC_LEN],
+}
+
+impl<'a> AuthenticatedHeader<'a> {
+    pub(crate) fn fmk(&self) -> &[u8; FMK_LEN] {
+        &self.fmk
+    }
+
+    pub(crate) fn header_bytes(&self) -> &'a [u8] {
+        self.header_bytes
+    }
+
+    pub(crate) fn header_hmac(&self) -> &'a [u8; HMAC_LEN] {
+        self.header_hmac
+    }
+}
+
+pub(crate) fn authenticate_header<'a>(
+    fmk: [u8; FMK_LEN],
+    header_bytes: &'a [u8],
+    header_hmac: &'a [u8; HMAC_LEN],
+) -> Result<AuthenticatedHeader<'a>, MacError> {
+    header_mac(&fmk, header_bytes).verify_slice(header_hmac)?;
+    Ok(AuthenticatedHeader {
+        fmk,
+        header_bytes,
+        header_hmac,
+    })
 }
 
 fn derive_hhk(fmk: &[u8; FMK_LEN]) -> [u8; HHK_LEN] {
