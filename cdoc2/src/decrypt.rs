@@ -66,6 +66,20 @@ pub fn decrypt_with_ec_key(
     decrypt_with_kek(container, record, &kek, max_size)
 }
 
+pub fn decrypt_with_shared_secret(
+    container: &Container,
+    record: &RecipientRecord,
+    shared_secret: &[u8],
+    max_size: u64,
+) -> Result<Vec<File>, DecryptError> {
+    let Capsule::Ecc(capsule) = &record.capsule else {
+        return Err(DecryptError::KeyTypeMismatch);
+    };
+    check_encryption_methods(container, record)?;
+    let kek = capsule.derive_kek_from_shared_secret(shared_secret)?;
+    decrypt_with_kek(container, record, &kek, max_size)
+}
+
 fn check_encryption_methods(
     container: &Container,
     record: &RecipientRecord,
