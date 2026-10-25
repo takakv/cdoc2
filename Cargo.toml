@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["cdoc2", "cdoc2-cli"]
+members = ["cdoc2", "cdoc2-cli", "cdoc2-client"]
 
 [workspace.package]
 edition = "2024"
