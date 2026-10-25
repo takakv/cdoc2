@@ -2,10 +2,7 @@ use flatbuffers::{FlatBufferBuilder, WIPOffset};
 
 use super::generated::ee::cyber::cdoc_2::fbs::header as fb;
 use super::generated::ee::cyber::cdoc_2::fbs::recipients as fb_rec;
-use super::{
-    FmkEncryptionMethod, Header, HeaderError, PayloadEncryptionMethod, RecipientRecord,
-    SerializeError,
-};
+use super::{FmkEncryptionMethod, Header, HeaderError, PayloadEncryptionMethod, RecipientRecord};
 use crate::capsule::Capsule;
 use crate::capsule::ecc::{EccPublicKeyCapsule, EllipticCurve};
 use crate::capsule::key_server::KeyServerCapsule;
@@ -34,20 +31,18 @@ pub(super) fn header_from_bytes(bytes: &[u8]) -> Result<Header, HeaderError> {
     })
 }
 
-pub(super) fn header_to_bytes(header: &Header) -> Result<Vec<u8>, SerializeError> {
+pub(super) fn header_to_bytes(header: &Header) -> Vec<u8> {
     let payload_encryption_method = match header.payload_encryption_method {
         PayloadEncryptionMethod::ChaCha20Poly1305 => fb::PayloadEncryptionMethod::CHACHA20POLY1305,
-        PayloadEncryptionMethod::Unknown => {
-            return Err(SerializeError::UnknownPayloadEncryptionMethod);
-        }
+        PayloadEncryptionMethod::Unknown => panic!("cannot write an unknown payload method"),
     };
 
     let mut fbb = FlatBufferBuilder::new();
-    let records = header
+    let records: Vec<WIPOffset<fb::RecipientRecord>> = header
         .recipients
         .iter()
         .map(|record| record_to_fb(&mut fbb, record))
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect();
     let recipients = fbb.create_vector(&records);
 
     let header = fb::Header::create(
@@ -58,7 +53,7 @@ pub(super) fn header_to_bytes(header: &Header) -> Result<Vec<u8>, SerializeError
         },
     );
     fbb.finish(header, None);
-    Ok(fbb.finished_data().to_vec())
+    fbb.finished_data().to_vec()
 }
 
 fn record_from_fb(record: fb::RecipientRecord<'_>) -> RecipientRecord {
@@ -78,7 +73,7 @@ fn record_from_fb(record: fb::RecipientRecord<'_>) -> RecipientRecord {
 fn record_to_fb<'a>(
     fbb: &mut FlatBufferBuilder<'a>,
     record: &RecipientRecord,
-) -> Result<WIPOffset<fb::RecipientRecord<'a>>, SerializeError> {
+) -> WIPOffset<fb::RecipientRecord<'a>> {
     let (capsule_type, capsule) = match &record.capsule {
         Capsule::Symmetric(c) => (
             fb::Capsule::recipients_SymmetricKeyCapsule,
@@ -86,7 +81,7 @@ fn record_to_fb<'a>(
         ),
         Capsule::Password(c) => (
             fb::Capsule::recipients_PBKDF2Capsule,
-            password_capsule_to_fb(fbb, c)?.as_union_value(),
+            password_capsule_to_fb(fbb, c).as_union_value(),
         ),
         Capsule::Ecc(c) => (
             fb::Capsule::recipients_ECCPublicKeyCapsule,
@@ -96,19 +91,17 @@ fn record_to_fb<'a>(
             fb::Capsule::recipients_KeyServerCapsule,
             key_server_capsule_to_fb(fbb, c).as_union_value(),
         ),
-        Capsule::Unsupported => return Err(SerializeError::UnsupportedCapsule),
+        Capsule::Unsupported => panic!("cannot write an unsupported capsule"),
     };
 
     let fmk_encryption_method = match record.fmk_encryption_method {
         FmkEncryptionMethod::Xor => fb::FMKEncryptionMethod::XOR,
-        FmkEncryptionMethod::Unknown => {
-            return Err(SerializeError::UnknownFmkEncryptionMethod);
-        }
+        FmkEncryptionMethod::Unknown => panic!("cannot write an unknown FMK method"),
     };
 
     let key_label = fbb.create_string(&record.key_label);
     let encrypted_fmk = fbb.create_vector(&record.encrypted_fmk);
-    Ok(fb::RecipientRecord::create(
+    fb::RecipientRecord::create(
         fbb,
         &fb::RecipientRecordArgs {
             capsule_type,
@@ -117,7 +110,7 @@ fn record_to_fb<'a>(
             encrypted_fmk: Some(encrypted_fmk),
             fmk_encryption_method,
         },
-    ))
+    )
 }
 
 fn capsule_from_fb(record: fb::RecipientRecord<'_>) -> Option<Capsule> {
@@ -166,15 +159,13 @@ fn password_capsule_from_fb(capsule: fb_rec::PBKDF2Capsule<'_>) -> Option<Pbkdf2
 fn password_capsule_to_fb<'a>(
     fbb: &mut FlatBufferBuilder<'a>,
     capsule: &Pbkdf2Capsule,
-) -> Result<WIPOffset<fb_rec::PBKDF2Capsule<'a>>, SerializeError> {
+) -> WIPOffset<fb_rec::PBKDF2Capsule<'a>> {
     let kdf_iterations = i32::try_from(capsule.kdf_iterations)
-        .ok()
-        .filter(|&n| n > 0)
-        .ok_or(SerializeError::UnsupportedCapsule)?;
+        .expect("the iteration count fits in the header's i32");
 
     let salt = fbb.create_vector(&capsule.salt);
     let password_salt = fbb.create_vector(&capsule.password_salt);
-    Ok(fb_rec::PBKDF2Capsule::create(
+    fb_rec::PBKDF2Capsule::create(
         fbb,
         &fb_rec::PBKDF2CapsuleArgs {
             salt: Some(salt),
@@ -182,7 +173,7 @@ fn password_capsule_to_fb<'a>(
             kdf_algorithm_identifier: fb_rec::KDFAlgorithmIdentifier::PBKDF2WithHmacSHA256,
             kdf_iterations,
         },
-    ))
+    )
 }
 
 fn ecc_capsule_from_fb(capsule: fb_rec::ECCPublicKeyCapsule<'_>) -> Option<EccPublicKeyCapsule> {

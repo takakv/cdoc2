@@ -51,16 +51,6 @@ pub enum HeaderError {
     Malformed(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum SerializeError {
-    #[error("cannot serialize an unsupported capsule")]
-    UnsupportedCapsule,
-    #[error("cannot serialize an unknown FMK encryption method")]
-    UnknownFmkEncryptionMethod,
-    #[error("cannot serialize an unknown payload encryption method")]
-    UnknownPayloadEncryptionMethod,
-}
-
 impl Header {
     pub fn find_recipient(&self, id: RecipientId) -> Result<&RecipientRecord, RecipientNotFound> {
         self.recipients
@@ -73,7 +63,7 @@ impl Header {
         fb::header_from_bytes(bytes)
     }
 
-    pub(crate) fn to_bytes(&self) -> Result<Vec<u8>, SerializeError> {
+    pub(crate) fn to_bytes(&self) -> Vec<u8> {
         fb::header_to_bytes(self)
     }
 }

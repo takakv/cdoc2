@@ -185,9 +185,7 @@ impl PreparedEncryption {
             recipients,
             payload_encryption_method: PayloadEncryptionMethod::ChaCha20Poly1305,
         };
-        let header_bytes = header
-            .to_bytes()
-            .expect("headers built for encryption should be serializable");
+        let header_bytes = header.to_bytes();
         let header_hmac = compute_header_hmac(&self.fmk, &header_bytes);
 
         let head =
