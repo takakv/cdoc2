@@ -18,6 +18,15 @@ pub struct FileEntry<'a> {
     pub size: u64,
 }
 
+impl<'a> From<&'a File> for FileEntry<'a> {
+    fn from(file: &'a File) -> Self {
+        FileEntry {
+            name: &file.name,
+            size: file.data.len() as u64,
+        }
+    }
+}
+
 pub trait Sink {
     fn create_file(&mut self, name: &str) -> io::Result<()>;
     fn append(&mut self, data: &[u8]) -> io::Result<()>;

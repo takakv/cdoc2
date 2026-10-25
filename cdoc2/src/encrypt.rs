@@ -149,13 +149,7 @@ impl PreparedEncryption {
     }
 
     pub fn encrypt(self, files: &[File]) -> Result<Vec<u8>, EncryptError> {
-        let entries: Vec<_> = files
-            .iter()
-            .map(|file| FileEntry {
-                name: &file.name,
-                size: file.data.len() as u64,
-            })
-            .collect();
+        let entries: Vec<FileEntry> = files.iter().map(FileEntry::from).collect();
         let mut container = Vec::new();
         self.encrypt_into(&entries, |i| Ok(files[i].data.as_slice()), &mut container)?;
         Ok(container)

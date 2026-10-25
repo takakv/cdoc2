@@ -26,13 +26,7 @@ fn files() -> Vec<File> {
 }
 
 fn encrypt_files(files: &[File]) -> Vec<u8> {
-    let entries: Vec<_> = files
-        .iter()
-        .map(|file| FileEntry {
-            name: &file.name,
-            size: file.data.len() as u64,
-        })
-        .collect();
+    let entries: Vec<FileEntry> = files.iter().map(FileEntry::from).collect();
     let mut container = Vec::new();
     encrypt_into(
         &entries,
