@@ -4,7 +4,7 @@ use std::thread::{self, JoinHandle};
 use tiny_http::{Header, Response, Server};
 
 use cdoc2::archive::File;
-use cdoc2::capsule::ecc::{EcPublicKey, EcSecretKey, EllipticCurve};
+use cdoc2::capsule::ecc::{EcSecretKey, EllipticCurve};
 use cdoc2::container::Container;
 use cdoc2::decrypt::{DecryptionKey, decrypt};
 use cdoc2::encrypt::Recipient;
@@ -65,8 +65,8 @@ impl EcdsaSigner for UnusedSigner {
 fn round_trip() {
     let (server, server_thread) = fake_server();
     let client = Client::new(vec![server]);
-    let secret_key = p384::SecretKey::from_slice(&[1; 48]).unwrap();
-    let public_key = EcPublicKey::P384(secret_key.public_key());
+    let key = EcSecretKey::P384(p384::SecretKey::from_slice(&[1; 48]).unwrap());
+    let public_key = key.public_key();
     let key_label = key_label::cert(&CertLabel {
         file: "cert.pem",
         cn: None,
@@ -92,7 +92,6 @@ fn round_trip() {
         )
         .unwrap();
 
-    let key = EcSecretKey::P384(secret_key);
     let decrypted = decrypt(
         &container,
         &fetched,

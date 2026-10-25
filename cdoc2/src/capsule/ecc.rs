@@ -31,6 +31,34 @@ pub enum EcPublicKey {
     P521(p521::PublicKey),
 }
 
+impl EcSecretKey {
+    pub fn public_key(&self) -> EcPublicKey {
+        match self {
+            EcSecretKey::P256(key) => EcPublicKey::P256(key.public_key()),
+            EcSecretKey::P384(key) => EcPublicKey::P384(key.public_key()),
+            EcSecretKey::P521(key) => EcPublicKey::P521(key.public_key()),
+        }
+    }
+}
+
+impl EcPublicKey {
+    pub fn curve(&self) -> EllipticCurve {
+        match self {
+            EcPublicKey::P256(_) => EllipticCurve::Secp256r1,
+            EcPublicKey::P384(_) => EllipticCurve::Secp384r1,
+            EcPublicKey::P521(_) => EllipticCurve::Secp521r1,
+        }
+    }
+
+    pub fn to_sec1_bytes(&self) -> Vec<u8> {
+        match self {
+            EcPublicKey::P256(key) => key.to_sec1_point(false).as_bytes().to_vec(),
+            EcPublicKey::P384(key) => key.to_sec1_point(false).as_bytes().to_vec(),
+            EcPublicKey::P521(key) => key.to_sec1_point(false).as_bytes().to_vec(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum EccKekError {
     #[error("the key is not on the recipient's curve")]
@@ -83,7 +111,10 @@ impl EccPublicKeyCapsule {
         Ok((capsule, kek))
     }
 
-    pub(crate) fn derive_kek(&self, secret_key: &EcSecretKey) -> Result<[u8; FMK_LEN], EccKekError> {
+    pub(crate) fn derive_kek(
+        &self,
+        secret_key: &EcSecretKey,
+    ) -> Result<[u8; FMK_LEN], EccKekError> {
         match (self.curve, secret_key) {
             (EllipticCurve::Secp256r1, EcSecretKey::P256(key)) => self.derive_curve_kek(key),
             (EllipticCurve::Secp384r1, EcSecretKey::P384(key)) => self.derive_curve_kek(key),

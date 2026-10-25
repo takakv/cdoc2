@@ -5,7 +5,7 @@ mod generated;
 mod fb;
 
 use crate::capsule::Capsule;
-use crate::capsule::ecc::EccPublicKeyCapsule;
+use crate::capsule::ecc::{EcPublicKey, EccPublicKeyCapsule};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Header {
@@ -60,7 +60,8 @@ impl Header {
 }
 
 impl RecipientRecord {
-    pub fn is_for_public_key(&self, public_key: &[u8]) -> bool {
+    pub fn is_for_public_key(&self, public_key: &EcPublicKey) -> bool {
+        let public_key = public_key.to_sec1_bytes();
         match &self.capsule {
             Capsule::Ecc(capsule) => capsule.recipient_public_key == public_key,
             Capsule::KeyServer(capsule) => capsule.recipient_public_key == public_key,
