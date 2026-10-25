@@ -3,6 +3,7 @@ use std::io;
 use cdoc2::archive::File;
 use cdoc2::container::{Container, ContainerError, ContainerHead};
 use cdoc2::encrypt::{Recipient, encrypt};
+use cdoc2::header::HeaderError;
 
 const PRELUDE: &[u8] = b"CDOC";
 const HMAC_LEN: usize = 32;
@@ -85,6 +86,18 @@ fn invalid_fields() {
     let too_long = (MAX_HEADER_LEN + 1).to_be_bytes();
     assert_eq!(with(5, &too_long), ContainerError::InvalidHeaderLength);
     assert!(matches!(with(9, &[0xff; 8]), ContainerError::Header(_)));
+}
+
+#[test]
+fn no_recipients() {
+    let header = [8, 0, 0, 0, 4, 0, 4, 0, 4, 0, 0, 0]; // an empty flatbuffer table
+    let header_len = (header.len() as i32).to_be_bytes();
+    let bytes = [PRELUDE, &[2], &header_len, &header, &[0; HMAC_LEN]].concat();
+
+    assert_eq!(
+        Container::parse(&bytes).unwrap_err(),
+        ContainerError::Header(HeaderError::Malformed("no recipients".into()))
+    );
 }
 
 #[test]

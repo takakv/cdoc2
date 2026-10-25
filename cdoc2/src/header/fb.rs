@@ -22,8 +22,11 @@ pub(super) fn header_from_bytes(bytes: &[u8]) -> Result<Header, HeaderError> {
 
     let recipients = header
         .recipients()
-        .map(|records| records.iter().map(record_from_fb).collect())
-        .unwrap_or_default();
+        .filter(|records| !records.is_empty())
+        .ok_or_else(|| HeaderError::Malformed("no recipients".into()))?
+        .iter()
+        .map(record_from_fb)
+        .collect();
 
     Ok(Header {
         recipients,
