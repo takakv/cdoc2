@@ -74,13 +74,20 @@ impl Client {
     /// so that the result is ready to encrypt.
     pub fn prepare(&self, recipients: &[Recipient]) -> Result<PreparedEncryption, Error> {
         let mut prepared = encrypt::prepare(recipients)?;
-        for capsule in prepared.capsule_uploads() {
-            self.upload(capsule)?;
+        if prepared.capsule_uploads().next().is_some() {
+            let http = http_client(None)?;
+            for capsule in prepared.capsule_uploads() {
+                self.upload(&http, capsule)?;
+            }
         }
         Ok(prepared)
     }
 
-    fn upload(&self, capsule: &mut CapsuleUpload) -> Result<(), Error> {
+    fn upload(
+        &self,
+        http: &reqwest::blocking::Client,
+        capsule: &mut CapsuleUpload,
+    ) -> Result<(), Error> {
         let server = self.server(capsule.keyserver_id())?;
         let body = serde_json::json!({
             "recipient_id": STANDARD.encode(capsule.recipient_public_key()),
@@ -89,7 +96,7 @@ impl Client {
         });
 
         let url = capsules_url(&server.upload_url);
-        let mut request = http_client(None)?.post(url).json(&body);
+        let mut request = http.post(url).json(&body);
         if let Some(expiry) = self.requested_expiry(capsule) {
             request = request.header("x-expiry-time", format_expiry(expiry));
         }
