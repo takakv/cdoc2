@@ -42,8 +42,6 @@ pub enum Error {
     NotKeyServerRecipient,
     #[error("invalid transaction ID {0:?}")]
     InvalidTransactionId(String),
-    #[error("invalid private key")]
-    InvalidPrivateKey,
     #[error(transparent)]
     Tls(#[from] rustls::Error),
     #[error(transparent)]
@@ -71,8 +69,7 @@ impl Client {
         Ok(prepared)
     }
 
-    /// Uploads the capsule and records the server's transaction ID and expiry time in it.
-    pub fn upload(&self, capsule: &mut CapsuleUpload) -> Result<(), Error> {
+    fn upload(&self, capsule: &mut CapsuleUpload) -> Result<(), Error> {
         let server = self.server(capsule.keyserver_id())?;
         let body = serde_json::json!({
             "recipient_id": STANDARD.encode(capsule.recipient_public_key()),

@@ -11,9 +11,9 @@ type Pbkdf2Hash = sha2::Sha256;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pbkdf2Capsule {
-    pub salt: Vec<u8>,
-    pub password_salt: Vec<u8>,
-    pub kdf_iterations: u32,
+    pub(crate) salt: Vec<u8>,
+    pub(crate) password_salt: Vec<u8>,
+    pub(crate) kdf_iterations: u32,
 }
 
 impl Pbkdf2Capsule {
@@ -25,7 +25,7 @@ impl Pbkdf2Capsule {
         })
     }
 
-    pub fn derive_kek(&self, password: &str, key_label: &str) -> [u8; FMK_LEN] {
+    pub(crate) fn derive_kek(&self, password: &str, key_label: &str) -> [u8; FMK_LEN] {
         let ikm = pbkdf2_hmac_array::<Pbkdf2Hash, PASSWORD_KEY_LEN>(
             password.as_bytes(),
             &self.password_salt,

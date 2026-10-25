@@ -23,11 +23,11 @@ pub enum Capsule {
     Unsupported,
 }
 
-pub fn encrypt_fmk(fmk: &[u8; FMK_LEN], kek: &[u8; FMK_LEN]) -> [u8; FMK_LEN] {
+pub(crate) fn encrypt_fmk(fmk: &[u8; FMK_LEN], kek: &[u8; FMK_LEN]) -> [u8; FMK_LEN] {
     xor(fmk, kek)
 }
 
-pub fn decrypt_fmk(encrypted_fmk: &[u8; FMK_LEN], kek: &[u8; FMK_LEN]) -> [u8; FMK_LEN] {
+pub(crate) fn decrypt_fmk(encrypted_fmk: &[u8; FMK_LEN], kek: &[u8; FMK_LEN]) -> [u8; FMK_LEN] {
     xor(encrypted_fmk, kek)
 }
 

@@ -34,7 +34,7 @@ pub enum Recipient<'a> {
 }
 
 impl Recipient<'_> {
-    pub fn key_label(&self) -> &str {
+    pub(crate) fn key_label(&self) -> &str {
         match *self {
             Recipient::Symmetric { key_label, .. }
             | Recipient::Password { key_label, .. }

@@ -4,7 +4,7 @@ use crate::header::RecipientRecord;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SymmetricKeyCapsule {
-    pub salt: Vec<u8>,
+    pub(crate) salt: Vec<u8>,
 }
 
 impl SymmetricKeyCapsule {
@@ -14,7 +14,7 @@ impl SymmetricKeyCapsule {
         })
     }
 
-    pub fn derive_kek(&self, key: &[u8], key_label: &str) -> [u8; FMK_LEN] {
+    pub(crate) fn derive_kek(&self, key: &[u8], key_label: &str) -> [u8; FMK_LEN] {
         derive_symmetric_kek(&self.salt, key, key_label)
     }
 }

@@ -65,7 +65,7 @@ pub enum FileNameError {
 
 const BLOCK_SIZE: u64 = 512;
 
-pub fn unpack(
+pub(crate) fn unpack(
     compressed: impl Read,
     max_size: u64,
     sink: &mut impl Sink,

@@ -43,9 +43,9 @@ pub enum EccKekError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EccPublicKeyCapsule {
-    pub curve: EllipticCurve,
-    pub recipient_public_key: Vec<u8>,
-    pub sender_public_key: Vec<u8>,
+    pub(crate) curve: EllipticCurve,
+    pub(crate) recipient_public_key: Vec<u8>,
+    pub(crate) sender_public_key: Vec<u8>,
 }
 
 impl EccPublicKeyCapsule {
@@ -83,7 +83,7 @@ impl EccPublicKeyCapsule {
         Ok((capsule, kek))
     }
 
-    pub fn derive_kek(&self, secret_key: &EcSecretKey) -> Result<[u8; FMK_LEN], EccKekError> {
+    pub(crate) fn derive_kek(&self, secret_key: &EcSecretKey) -> Result<[u8; FMK_LEN], EccKekError> {
         match (self.curve, secret_key) {
             (EllipticCurve::Secp256r1, EcSecretKey::P256(key)) => self.derive_curve_kek(key),
             (EllipticCurve::Secp384r1, EcSecretKey::P384(key)) => self.derive_curve_kek(key),
@@ -131,7 +131,7 @@ impl EccPublicKeyCapsule {
             .map_err(|_| EccKekError::InvalidSenderKey)
     }
 
-    pub fn derive_kek_from_shared_secret(
+    pub(crate) fn derive_kek_from_shared_secret(
         &self,
         shared_secret: &[u8],
     ) -> Result<[u8; FMK_LEN], EccKekError> {

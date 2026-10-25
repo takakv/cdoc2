@@ -2,8 +2,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use rustls::client::ResolvesClientCert;
-use rustls::crypto::aws_lc_rs::sign::any_supported_type;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::pki_types::CertificateDer;
 use rustls::sign::{CertifiedKey, Signer, SigningKey};
 use rustls::{ClientConfig, SignatureAlgorithm, SignatureScheme};
 use rustls_platform_verifier::BuilderVerifierExt;
@@ -20,23 +19,15 @@ pub trait EcdsaSigner: Debug + Send + Sync {
 pub struct TlsIdentity(Arc<CertifiedKey>);
 
 impl TlsIdentity {
-    pub fn new(certificate_chain: Vec<Vec<u8>>, private_key: Vec<u8>) -> Result<Self, Error> {
-        let private_key =
-            PrivateKeyDer::try_from(private_key).map_err(|_| Error::InvalidPrivateKey)?;
-        let key = any_supported_type(&private_key).map_err(|_| Error::InvalidPrivateKey)?;
-        Ok(Self::with_key(certificate_chain, key))
-    }
-
     pub fn with_signer(certificate_chain: Vec<Vec<u8>>, signer: Arc<dyn EcdsaSigner>) -> Self {
-        Self::with_key(certificate_chain, Arc::new(EcdsaKey(signer)))
-    }
-
-    fn with_key(certificate_chain: Vec<Vec<u8>>, key: Arc<dyn SigningKey>) -> Self {
         let chain = certificate_chain
             .into_iter()
             .map(CertificateDer::from)
             .collect();
-        TlsIdentity(Arc::new(CertifiedKey::new(chain, key)))
+        TlsIdentity(Arc::new(CertifiedKey::new(
+            chain,
+            Arc::new(EcdsaKey(signer)),
+        )))
     }
 }
 

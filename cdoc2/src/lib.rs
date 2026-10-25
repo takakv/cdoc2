@@ -6,7 +6,7 @@ pub mod capsule;
 #[cfg(feature = "x509")]
 pub mod certificate;
 pub mod container;
-pub mod crypto;
+mod crypto;
 pub mod decrypt;
 pub mod encrypt;
 #[cfg(feature = "hazmat")]

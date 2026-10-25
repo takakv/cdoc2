@@ -10,25 +10,25 @@ use crate::capsule::ecc::EccPublicKeyCapsule;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Header {
     pub recipients: Vec<RecipientRecord>,
-    pub payload_encryption_method: PayloadEncryptionMethod,
+    pub(crate) payload_encryption_method: PayloadEncryptionMethod,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecipientRecord {
     pub capsule: Capsule,
     pub key_label: String,
-    pub encrypted_fmk: Vec<u8>,
-    pub fmk_encryption_method: FmkEncryptionMethod,
+    pub(crate) encrypted_fmk: Vec<u8>,
+    pub(crate) fmk_encryption_method: FmkEncryptionMethod,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FmkEncryptionMethod {
+pub(crate) enum FmkEncryptionMethod {
     Xor,
     Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PayloadEncryptionMethod {
+pub(crate) enum PayloadEncryptionMethod {
     ChaCha20Poly1305,
     Unknown,
 }
@@ -40,7 +40,7 @@ pub enum HeaderError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum SerializeError {
+pub(crate) enum SerializeError {
     #[error("cannot serialize an unsupported capsule")]
     UnsupportedCapsule,
     #[error("cannot serialize an unknown FMK encryption method")]
@@ -50,11 +50,11 @@ pub enum SerializeError {
 }
 
 impl Header {
-    pub fn parse(bytes: &[u8]) -> Result<Header, HeaderError> {
+    pub(crate) fn parse(bytes: &[u8]) -> Result<Header, HeaderError> {
         fb::header_from_bytes(bytes)
     }
 
-    pub fn to_bytes(&self) -> Result<Vec<u8>, SerializeError> {
+    pub(crate) fn to_bytes(&self) -> Result<Vec<u8>, SerializeError> {
         fb::header_to_bytes(self)
     }
 }

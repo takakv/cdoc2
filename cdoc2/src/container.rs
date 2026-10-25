@@ -10,8 +10,8 @@ const MAX_HEADER_LEN: usize = 1 << 20;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainerHead {
     pub header: Header,
-    pub header_bytes: Vec<u8>,
-    pub header_hmac: [u8; HMAC_LEN],
+    pub(crate) header_bytes: Vec<u8>,
+    pub(crate) header_hmac: [u8; HMAC_LEN],
 }
 
 #[derive(Debug, Clone)]

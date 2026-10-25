@@ -1,14 +1,15 @@
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use tiny_http::{Header, Response, Server};
 
 use cdoc2::archive::File;
-use cdoc2::capsule::ecc::{EcPublicKey, EcSecretKey};
+use cdoc2::capsule::ecc::{EcPublicKey, EcSecretKey, EllipticCurve};
 use cdoc2::container::Container;
 use cdoc2::decrypt::{DecryptionKey, decrypt};
 use cdoc2::encrypt::Recipient;
 use cdoc2::key_label::{self, CertLabel};
-use cdoc2_client::{Client, KeyServer, TlsIdentity};
+use cdoc2_client::{Client, EcdsaSigner, KeyServer, TlsIdentity};
 
 fn files() -> Vec<File> {
     vec![File {
@@ -46,13 +47,18 @@ fn fake_server() -> (KeyServer, JoinHandle<()>) {
     (server, handle)
 }
 
-fn tls_identity() -> TlsIdentity {
-    let client = rcgen::generate_simple_self_signed(["client".to_owned()]).unwrap();
-    TlsIdentity::new(
-        vec![client.cert.der().to_vec()],
-        client.signing_key.serialize_der(),
-    )
-    .unwrap()
+// The fake server speaks plain HTTP, so the client never signs.
+#[derive(Debug)]
+struct UnusedSigner;
+
+impl EcdsaSigner for UnusedSigner {
+    fn curve(&self) -> EllipticCurve {
+        EllipticCurve::Secp384r1
+    }
+
+    fn sign(&self, _: &[u8]) -> Result<Vec<u8>, String> {
+        Err("unused".into())
+    }
 }
 
 #[test]
@@ -79,7 +85,12 @@ fn round_trip() {
     let label = key_label::parse(&record.key_label).unwrap();
     assert_eq!(label.field("file"), Some("cert.pem"));
     assert_eq!(label.field("server_exp"), Some("1893456000"));
-    let fetched = client.fetch(record, &tls_identity()).unwrap();
+    let fetched = client
+        .fetch(
+            record,
+            &TlsIdentity::with_signer(Vec::new(), Arc::new(UnusedSigner)),
+        )
+        .unwrap();
 
     let key = EcSecretKey::P384(secret_key);
     let decrypted = decrypt(

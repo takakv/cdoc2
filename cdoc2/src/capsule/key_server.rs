@@ -41,7 +41,7 @@ impl CapsuleUpload {
         })
     }
 
-    pub fn key_label(&self) -> &str {
+    pub(crate) fn key_label(&self) -> &str {
         &self.key_label
     }
 
