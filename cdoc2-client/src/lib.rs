@@ -1,6 +1,5 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use reqwest::header::LOCATION;
 use serde_json::Value;
 
 use cdoc2::capsule::Capsule;
@@ -67,29 +66,41 @@ impl Client {
     pub fn prepare(&self, recipients: &[Recipient]) -> Result<PreparedEncryption, Error> {
         let mut prepared = encrypt::prepare(recipients)?;
         for capsule in prepared.capsule_uploads() {
-            capsule.set_transaction_id(self.upload(capsule)?);
+            self.upload(capsule)?;
         }
         Ok(prepared)
     }
 
-    pub fn upload(&self, capsule: &CapsuleUpload) -> Result<String, Error> {
+    /// Uploads the capsule and records the server's transaction ID and expiry time in it.
+    pub fn upload(&self, capsule: &mut CapsuleUpload) -> Result<(), Error> {
         let server = self.server(capsule.keyserver_id())?;
         let body = serde_json::json!({
             "recipient_id": STANDARD.encode(capsule.recipient_public_key()),
             "ephemeral_key_material": STANDARD.encode(capsule.sender_public_key()),
             "capsule_type": capsule_type(capsule.curve()),
         });
+
         let url = capsules_url(&server.upload_url);
-        let response = http_client(None)?.post(url).json(&body).send()?;
-        let response = response.error_for_status()?;
-        let location = response
-            .headers()
-            .get(LOCATION)
-            .and_then(|v| v.to_str().ok());
-        match location.and_then(|location| location.rsplit_once("/key-capsules/")) {
-            Some((_, id)) if is_valid_transaction_id(id) => Ok(id.to_owned()),
-            _ => Err(Error::InvalidResponse("no transaction ID in Location")),
+        let response = http_client(None)?
+            .post(url)
+            .json(&body)
+            .send()?
+            .error_for_status()?;
+
+        let header = |name: &str| response.headers().get(name)?.to_str().ok();
+        let location =
+            header("location").and_then(|location| location.rsplit_once("/key-capsules/"));
+        let transaction_id = match location {
+            Some((_, id)) if is_valid_transaction_id(id) => id.to_owned(),
+            _ => return Err(Error::InvalidResponse("no transaction ID in Location")),
+        };
+        let expiry = header("x-expiry-time").map(parse_expiry).transpose()?;
+
+        capsule.set_transaction_id(transaction_id);
+        if let Some(expiry) = expiry {
+            capsule.set_expiry(expiry);
         }
+        Ok(())
     }
 
     pub fn fetch(
@@ -107,8 +118,12 @@ impl Client {
         }
 
         let url = format!("{}/{transaction_id}", capsules_url(&server.fetch_url));
-        let response = http_client(Some(identity))?.get(url).send()?;
-        let body: Value = response.error_for_status()?.json()?;
+        let response = http_client(Some(identity))?
+            .get(url)
+            .send()?
+            .error_for_status()?;
+        let body: Value = response.json()?;
+
         let recipient_id = decode_field(&body, "recipient_id")?;
         let sender_public_key = decode_field(&body, "ephemeral_key_material")?;
         if body["capsule_type"] != capsule_type(capsule.curve)
@@ -118,6 +133,7 @@ impl Client {
                 "the capsule is for another recipient",
             ));
         }
+
         Ok(record
             .with_sender_public_key(sender_public_key)
             .expect("the record has a key server capsule"))
@@ -144,6 +160,14 @@ fn is_valid_transaction_id(id: &str) -> bool {
         && id
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+fn parse_expiry(value: &str) -> Result<u64, Error> {
+    value
+        .parse::<jiff::Timestamp>()
+        .ok()
+        .and_then(|time| u64::try_from(time.as_second()).ok())
+        .ok_or(Error::InvalidResponse("invalid x-expiry-time"))
 }
 
 fn decode_field(body: &Value, name: &str) -> Result<Vec<u8>, Error> {

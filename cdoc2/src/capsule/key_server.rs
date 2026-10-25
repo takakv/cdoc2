@@ -2,6 +2,7 @@ use crate::capsule::ecc::{EcPublicKey, EccPublicKeyCapsule, EllipticCurve};
 use crate::capsule::{Capsule, encrypt_fmk};
 use crate::crypto::FMK_LEN;
 use crate::header::{FmkEncryptionMethod, RecipientRecord};
+use crate::key_label;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyServerCapsule {
@@ -62,6 +63,10 @@ impl CapsuleUpload {
 
     pub fn set_transaction_id(&mut self, transaction_id: String) {
         self.capsule.transaction_id = transaction_id;
+    }
+
+    pub fn set_expiry(&mut self, expiry: u64) {
+        self.key_label = key_label::with_server_exp(&self.key_label, expiry);
     }
 
     pub(crate) fn is_uploaded(&self) -> bool {

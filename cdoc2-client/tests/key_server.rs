@@ -7,6 +7,7 @@ use cdoc2::capsule::ecc::{EcPublicKey, EcSecretKey};
 use cdoc2::container::Container;
 use cdoc2::decrypt::{DecryptionKey, decrypt};
 use cdoc2::encrypt::Recipient;
+use cdoc2::key_label::{self, CertLabel};
 use cdoc2_client::{Client, KeyServer, TlsIdentity};
 
 fn files() -> Vec<File> {
@@ -16,7 +17,7 @@ fn files() -> Vec<File> {
     }]
 }
 
-// Stores one uploaded capsule as transaction KC0123 and serves it back once.
+// Stores one uploaded capsule as transaction KC0123 until 2030 and serves it back once.
 fn fake_server() -> (KeyServer, JoinHandle<()>) {
     let server = Server::http("127.0.0.1:0").unwrap();
     let url = format!("http://{}", server.server_addr().to_ip().unwrap());
@@ -25,10 +26,13 @@ fn fake_server() -> (KeyServer, JoinHandle<()>) {
         assert_eq!(upload.url(), "/key-capsules");
         let mut capsule = String::new();
         upload.as_reader().read_to_string(&mut capsule).unwrap();
+
         let location: Header = "Location: /key-capsules/KC0123".parse().unwrap();
-        upload
-            .respond(Response::empty(201).with_header(location))
-            .unwrap();
+        let expiry: Header = "x-expiry-time: 2030-01-01T00:00:00Z".parse().unwrap();
+        let response = Response::empty(201)
+            .with_header(location)
+            .with_header(expiry);
+        upload.respond(response).unwrap();
 
         let fetch = server.recv().unwrap();
         assert_eq!(fetch.url(), "/key-capsules/KC0123");
@@ -57,8 +61,13 @@ fn round_trip() {
     let client = Client::new(vec![server]);
     let secret_key = p384::SecretKey::from_slice(&[1; 48]).unwrap();
     let public_key = EcPublicKey::P384(secret_key.public_key());
+    let key_label = key_label::cert(&CertLabel {
+        file: "cert.pem",
+        cn: None,
+        cert_sha1: None,
+    });
     let recipient = Recipient::KeyServer {
-        key_label: "label",
+        key_label: &key_label,
         public_key: &public_key,
         keyserver_id: "test",
     };
@@ -67,6 +76,9 @@ fn round_trip() {
     let bytes = prepared.encrypt(&files()).unwrap();
     let container = Container::parse(&bytes).unwrap();
     let record = &container.head.header.recipients[0];
+    let label = key_label::parse(&record.key_label).unwrap();
+    assert_eq!(label.field("file"), Some("cert.pem"));
+    assert_eq!(label.field("server_exp"), Some("1893456000"));
     let fetched = client.fetch(record, &tls_identity()).unwrap();
 
     let key = EcSecretKey::P384(secret_key);

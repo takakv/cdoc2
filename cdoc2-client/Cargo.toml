@@ -12,6 +12,7 @@ repository.workspace = true
 [dependencies]
 base64 = "0.23.1"
 cdoc2 = { path = "../cdoc2", version = "0.0.0" }
+jiff = { version = "0.2.38", default-features = false, features = ["std"] }
 p256 = { version = "0.14.0", default-features = false, features = ["ecdsa-core"] }
 p384 = { version = "0.14.0", default-features = false, features = ["ecdsa-core"] }
 p521 = { version = "0.14.0", default-features = false, features = ["ecdsa-core"] }

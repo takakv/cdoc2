@@ -56,7 +56,6 @@ pub struct EidLabel<'a> {
     pub serial_number: &'a str,
     pub first_name: Option<&'a str>,
     pub last_name: Option<&'a str>,
-    pub server_exp: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,11 +63,9 @@ pub struct CertLabel<'a> {
     pub file: &'a str,
     pub cn: Option<&'a str>,
     pub cert_sha1: Option<&'a str>,
-    pub server_exp: Option<u64>,
 }
 
 pub fn eid(label: &EidLabel) -> String {
-    let server_exp = label.server_exp.map(|t| t.to_string());
     structured(
         label.eid_type.as_str(),
         &present([
@@ -76,20 +73,17 @@ pub fn eid(label: &EidLabel) -> String {
             ("cn", Some(label.cn)),
             ("first_name", label.first_name),
             ("last_name", label.last_name),
-            ("server_exp", server_exp.as_deref()),
         ]),
     )
 }
 
 pub fn cert(label: &CertLabel) -> String {
-    let server_exp = label.server_exp.map(|t| t.to_string());
     structured(
         "cert",
         &present([
             ("file", Some(label.file)),
             ("cn", label.cn),
             ("cert_sha1", label.cert_sha1),
-            ("server_exp", server_exp.as_deref()),
         ]),
     )
 }
@@ -106,6 +100,22 @@ fn structured(kind: &str, fields: &[(&str, &str)]) -> String {
         .append_pair("v", "1")
         .append_pair("type", kind)
         .extend_pairs(fields)
+        .finish();
+    format!("data:,{fields}")
+}
+
+pub(crate) fn with_server_exp(key_label: &str, server_exp: u64) -> String {
+    let Some(label) = parse(key_label) else {
+        return key_label.to_owned();
+    };
+    let fields = form_urlencoded::Serializer::new(String::new())
+        .extend_pairs(
+            label
+                .fields
+                .iter()
+                .filter(|(name, _)| !name.eq_ignore_ascii_case("server_exp")),
+        )
+        .append_pair("server_exp", &server_exp.to_string())
         .finish();
     format!("data:,{fields}")
 }
