@@ -6,6 +6,7 @@ mod fb;
 
 use crate::capsule::Capsule;
 use crate::capsule::ecc::{EcPublicKey, EccPublicKeyCapsule};
+use crate::key_label;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Header {
@@ -20,6 +21,17 @@ pub struct RecipientRecord {
     pub(crate) encrypted_fmk: Vec<u8>,
     pub(crate) fmk_encryption_method: FmkEncryptionMethod,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub enum RecipientId<'a> {
+    EcPublicKey(&'a EcPublicKey),
+    Symmetric { label: &'a str },
+    Password { label: &'a str },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("the container is not meant for this key")]
+pub struct RecipientNotFound;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FmkEncryptionMethod {
@@ -50,6 +62,13 @@ pub(crate) enum SerializeError {
 }
 
 impl Header {
+    pub fn find_recipient(&self, id: RecipientId) -> Result<&RecipientRecord, RecipientNotFound> {
+        self.recipients
+            .iter()
+            .find(|record| record.is_for(id))
+            .ok_or(RecipientNotFound)
+    }
+
     pub(crate) fn parse(bytes: &[u8]) -> Result<Header, HeaderError> {
         fb::header_from_bytes(bytes)
     }
@@ -60,12 +79,19 @@ impl Header {
 }
 
 impl RecipientRecord {
-    pub fn is_for_public_key(&self, public_key: &EcPublicKey) -> bool {
-        let public_key = public_key.to_sec1_bytes();
-        match &self.capsule {
-            Capsule::Ecc(capsule) => capsule.recipient_public_key == public_key,
-            Capsule::KeyServer(capsule) => capsule.recipient_public_key == public_key,
-            Capsule::Symmetric(_) | Capsule::Password(_) | Capsule::Unsupported => false,
+    fn is_for(&self, id: RecipientId) -> bool {
+        match (&self.capsule, id) {
+            (Capsule::Ecc(capsule), RecipientId::EcPublicKey(key)) => {
+                capsule.recipient_public_key == key.to_sec1_bytes()
+            }
+            (Capsule::KeyServer(capsule), RecipientId::EcPublicKey(key)) => {
+                capsule.recipient_public_key == key.to_sec1_bytes()
+            }
+            (Capsule::Symmetric(_), RecipientId::Symmetric { label })
+            | (Capsule::Password(_), RecipientId::Password { label }) => {
+                key_label::matches(&self.key_label, label)
+            }
+            _ => false,
         }
     }
 
