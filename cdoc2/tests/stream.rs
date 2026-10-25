@@ -2,7 +2,7 @@ use std::io::{self, Cursor};
 
 use cdoc2::archive::{File, FileEntry, Sink, UnpackError};
 use cdoc2::container::ContainerHead;
-use cdoc2::decrypt::{DecryptError, DecryptionKey, decrypt_into};
+use cdoc2::decrypt::{DecryptError, DecryptOptions, DecryptionKey, decrypt_into};
 use cdoc2::encrypt::{EncryptError, Recipient, encrypt_into};
 use cdoc2::payload::PayloadError;
 
@@ -47,7 +47,7 @@ fn decrypt_files(container: &[u8]) -> (Result<(), DecryptError>, Vec<File>) {
         &head.header.recipients[0],
         &DecryptionKey::Symmetric(KEY),
         reader,
-        u64::MAX,
+        DecryptOptions::default(),
         &mut files,
     );
     (result, files)
@@ -139,7 +139,10 @@ fn decrypt_recorded(container: &[u8], max_size: u64) -> (Result<(), DecryptError
         &head.header.recipients[0],
         &DecryptionKey::Symmetric(KEY),
         reader,
-        max_size,
+        DecryptOptions {
+            max_size,
+            ..Default::default()
+        },
         &mut recorder,
     );
     (result, recorder)

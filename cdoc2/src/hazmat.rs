@@ -4,7 +4,7 @@ use std::io::Read;
 
 use crate::archive::Sink;
 use crate::container::ContainerHead;
-use crate::decrypt::{DecryptError, DecryptionKey, authenticate, decrypt_payload};
+use crate::decrypt::{DecryptError, DecryptOptions, DecryptionKey, authenticate, decrypt_payload};
 use crate::header::RecipientRecord;
 
 /// Like [`decrypt_into`](crate::decrypt::decrypt_into), but reads `payload` only once and checks
@@ -15,9 +15,9 @@ pub fn decrypt_into_unverified(
     record: &RecipientRecord,
     key: &DecryptionKey,
     payload: impl Read,
-    max_size: u64,
+    options: DecryptOptions,
     sink: &mut impl Sink,
 ) -> Result<(), DecryptError> {
-    let header = authenticate(head, record, key)?;
-    decrypt_payload(&header, payload, max_size, sink)
+    let header = authenticate(head, record, key, options)?;
+    decrypt_payload(&header, payload, options.max_size, sink)
 }

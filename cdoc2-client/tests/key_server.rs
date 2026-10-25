@@ -7,7 +7,7 @@ use tiny_http::{Header, Method, Response, Server};
 use cdoc2::archive::File;
 use cdoc2::capsule::ecc::{EcSecretKey, EllipticCurve};
 use cdoc2::container::Container;
-use cdoc2::decrypt::{DecryptionKey, decrypt};
+use cdoc2::decrypt::{DecryptOptions, DecryptionKey, decrypt};
 use cdoc2::encrypt::Recipient;
 use cdoc2::key_label::{self, CertLabel};
 use cdoc2_client::{Client, EcdsaSigner, KeyServer, TlsIdentity};
@@ -128,7 +128,7 @@ fn round_trip() {
         &container,
         &fetched,
         &DecryptionKey::EcSecretKey(&key),
-        u64::MAX,
+        DecryptOptions::default(),
     );
     assert_eq!(decrypted, Ok(files()));
 

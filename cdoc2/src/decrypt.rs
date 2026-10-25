@@ -20,6 +20,10 @@ pub enum DecryptError {
     UnsupportedFmkEncryptionMethod,
     #[error("encrypted FMK must be {FMK_LEN} bytes, got {0}")]
     InvalidEncryptedFmkLength(usize),
+    #[error(
+        "the password capsule asks for {iterations} PBKDF2 iterations, more than the allowed {max}"
+    )]
+    TooManyKdfIterations { iterations: u32, max: u32 },
     #[error("header HMAC mismatch: wrong key or corrupted file")]
     HmacMismatch,
     #[error(transparent)]
@@ -39,11 +43,26 @@ pub enum DecryptionKey<'a> {
     EcdhSharedSecret(&'a [u8]),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecryptOptions {
+    pub max_size: u64,
+    pub max_kdf_iterations: u32,
+}
+
+impl Default for DecryptOptions {
+    fn default() -> Self {
+        DecryptOptions {
+            max_size: u64::MAX,
+            max_kdf_iterations: 10_000_000,
+        }
+    }
+}
+
 pub fn decrypt(
     container: &Container,
     record: &RecipientRecord,
     key: &DecryptionKey,
-    max_size: u64,
+    options: DecryptOptions,
 ) -> Result<Vec<File>, DecryptError> {
     let mut files = Vec::new();
     decrypt_into(
@@ -51,7 +70,7 @@ pub fn decrypt(
         record,
         key,
         Cursor::new(container.payload),
-        max_size,
+        options,
         &mut files,
     )?;
     Ok(files)
@@ -62,12 +81,12 @@ pub fn decrypt_into(
     record: &RecipientRecord,
     key: &DecryptionKey,
     mut payload: impl Read + Seek,
-    max_size: u64,
+    options: DecryptOptions,
     sink: &mut impl Sink,
 ) -> Result<(), DecryptError> {
-    let header = authenticate(head, record, key)?;
+    let header = authenticate(head, record, key, options)?;
     verify_payload(&header, &mut payload)?;
-    decrypt_payload(&header, payload, max_size, sink)
+    decrypt_payload(&header, payload, options.max_size, sink)
 }
 
 pub(crate) fn decrypt_payload(
@@ -88,6 +107,7 @@ pub(crate) fn authenticate<'a>(
     head: &'a ContainerHead,
     record: &RecipientRecord,
     key: &DecryptionKey,
+    options: DecryptOptions,
 ) -> Result<AuthenticatedHeader<'a>, DecryptError> {
     check_encryption_methods(head, record)?;
     let encrypted_fmk = record
@@ -96,7 +116,7 @@ pub(crate) fn authenticate<'a>(
         .try_into()
         .map_err(|_| DecryptError::InvalidEncryptedFmkLength(record.encrypted_fmk.len()))?;
 
-    let kek = derive_kek(record, key)?;
+    let kek = derive_kek(record, key, options)?;
     let fmk = decrypt_fmk(encrypted_fmk, &kek);
     authenticate_header(fmk, &head.header_bytes, &head.header_hmac)
         .map_err(|_| DecryptError::HmacMismatch)
@@ -105,12 +125,19 @@ pub(crate) fn authenticate<'a>(
 fn derive_kek(
     record: &RecipientRecord,
     key: &DecryptionKey,
+    options: DecryptOptions,
 ) -> Result<[u8; FMK_LEN], DecryptError> {
     match (&record.capsule, *key) {
         (Capsule::Symmetric(capsule), DecryptionKey::Symmetric(key)) => {
             Ok(capsule.derive_kek(key, &record.key_label))
         }
         (Capsule::Password(capsule), DecryptionKey::Password(password)) => {
+            if capsule.kdf_iterations > options.max_kdf_iterations {
+                return Err(DecryptError::TooManyKdfIterations {
+                    iterations: capsule.kdf_iterations,
+                    max: options.max_kdf_iterations,
+                });
+            }
             Ok(capsule.derive_kek(password, &record.key_label))
         }
         (Capsule::Ecc(capsule), DecryptionKey::EcSecretKey(secret_key)) => {
