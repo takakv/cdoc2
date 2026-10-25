@@ -1,14 +1,31 @@
 use elliptic_curve::ecdh::{EphemeralSecret, SharedSecret, diffie_hellman};
 use elliptic_curve::sec1::{FromSec1Point, ModulusSize, ToSec1Point};
-use elliptic_curve::{
-    AffinePoint, Curve, CurveArithmetic, FieldBytes, FieldBytesSize, Generate, PublicKey, SecretKey,
-};
+use elliptic_curve::{Curve, CurveArithmetic, FieldBytes, Generate, PublicKey, SecretKey};
 
 use crate::capsule::{Capsule, expand_kek, record_with_kek};
 use crate::crypto::{FMK_LEN, HashAlgorithm};
 use crate::header::RecipientRecord;
 
 const UNCOMPRESSED_POINT_TAG: u8 = 0x04;
+
+trait NistCurve:
+    Curve<FieldBytesSize: ModulusSize>
+    + CurveArithmetic<AffinePoint: FromSec1Point<Self> + ToSec1Point<Self>>
+{
+    const CURVE: EllipticCurve;
+}
+
+impl NistCurve for p256::NistP256 {
+    const CURVE: EllipticCurve = EllipticCurve::Secp256r1;
+}
+
+impl NistCurve for p384::NistP384 {
+    const CURVE: EllipticCurve = EllipticCurve::Secp384r1;
+}
+
+impl NistCurve for p521::NistP521 {
+    const CURVE: EllipticCurve = EllipticCurve::Secp521r1;
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EllipticCurve {
@@ -81,24 +98,18 @@ impl EccPublicKeyCapsule {
         recipient: &EcPublicKey,
     ) -> Result<(Self, [u8; FMK_LEN]), getrandom::Error> {
         match recipient {
-            EcPublicKey::P256(key) => Self::generate_curve(EllipticCurve::Secp256r1, key),
-            EcPublicKey::P384(key) => Self::generate_curve(EllipticCurve::Secp384r1, key),
-            EcPublicKey::P521(key) => Self::generate_curve(EllipticCurve::Secp521r1, key),
+            EcPublicKey::P256(key) => Self::generate_curve(key),
+            EcPublicKey::P384(key) => Self::generate_curve(key),
+            EcPublicKey::P521(key) => Self::generate_curve(key),
         }
     }
 
-    fn generate_curve<C>(
-        curve: EllipticCurve,
+    fn generate_curve<C: NistCurve>(
         recipient: &PublicKey<C>,
-    ) -> Result<(Self, [u8; FMK_LEN]), getrandom::Error>
-    where
-        C: CurveArithmetic,
-        FieldBytesSize<C>: ModulusSize,
-        AffinePoint<C>: FromSec1Point<C> + ToSec1Point<C>,
-    {
+    ) -> Result<(Self, [u8; FMK_LEN]), getrandom::Error> {
         let ephemeral_secret = EphemeralSecret::<C>::try_generate()?;
         let capsule = Self {
-            curve,
+            curve: C::CURVE,
             recipient_public_key: recipient.to_sec1_point(false).as_bytes().to_vec(),
             sender_public_key: ephemeral_secret
                 .public_key()
@@ -115,20 +126,20 @@ impl EccPublicKeyCapsule {
         &self,
         secret_key: &EcSecretKey,
     ) -> Result<[u8; FMK_LEN], EccKekError> {
-        match (self.curve, secret_key) {
-            (EllipticCurve::Secp256r1, EcSecretKey::P256(key)) => self.derive_curve_kek(key),
-            (EllipticCurve::Secp384r1, EcSecretKey::P384(key)) => self.derive_curve_kek(key),
-            (EllipticCurve::Secp521r1, EcSecretKey::P521(key)) => self.derive_curve_kek(key),
-            _ => Err(EccKekError::CurveMismatch),
+        match secret_key {
+            EcSecretKey::P256(key) => self.derive_curve_kek(key),
+            EcSecretKey::P384(key) => self.derive_curve_kek(key),
+            EcSecretKey::P521(key) => self.derive_curve_kek(key),
         }
     }
 
-    fn derive_curve_kek<C>(&self, secret_key: &SecretKey<C>) -> Result<[u8; FMK_LEN], EccKekError>
-    where
-        C: CurveArithmetic,
-        FieldBytesSize<C>: ModulusSize,
-        AffinePoint<C>: FromSec1Point<C> + ToSec1Point<C>,
-    {
+    fn derive_curve_kek<C: NistCurve>(
+        &self,
+        secret_key: &SecretKey<C>,
+    ) -> Result<[u8; FMK_LEN], EccKekError> {
+        if self.curve != C::CURVE {
+            return Err(EccKekError::CurveMismatch);
+        }
         let pk = self.sender_point::<C>()?;
         let shared_secret = diffie_hellman(secret_key.to_nonzero_scalar(), pk.as_affine());
         Ok(self.kek_from_shared_secret(&shared_secret))
@@ -136,25 +147,14 @@ impl EccPublicKeyCapsule {
 
     pub fn sender_public_key(&self) -> Result<&[u8], EccKekError> {
         match self.curve {
-            EllipticCurve::Secp256r1 => {
-                self.sender_point::<p256::NistP256>()?;
-            }
-            EllipticCurve::Secp384r1 => {
-                self.sender_point::<p384::NistP384>()?;
-            }
-            EllipticCurve::Secp521r1 => {
-                self.sender_point::<p521::NistP521>()?;
-            }
-        }
+            EllipticCurve::Secp256r1 => self.sender_point::<p256::NistP256>().map(drop),
+            EllipticCurve::Secp384r1 => self.sender_point::<p384::NistP384>().map(drop),
+            EllipticCurve::Secp521r1 => self.sender_point::<p521::NistP521>().map(drop),
+        }?;
         Ok(&self.sender_public_key)
     }
 
-    fn sender_point<C>(&self) -> Result<PublicKey<C>, EccKekError>
-    where
-        C: CurveArithmetic,
-        FieldBytesSize<C>: ModulusSize,
-        AffinePoint<C>: FromSec1Point<C> + ToSec1Point<C>,
-    {
+    fn sender_point<C: NistCurve>(&self) -> Result<PublicKey<C>, EccKekError> {
         if self.sender_public_key.first() != Some(&UNCOMPRESSED_POINT_TAG) {
             return Err(EccKekError::InvalidSenderKey);
         }
