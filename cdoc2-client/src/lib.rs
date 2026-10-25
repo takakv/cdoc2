@@ -1,9 +1,6 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use reqwest::header::LOCATION;
-use rustls::ClientConfig;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use rustls_platform_verifier::BuilderVerifierExt;
 use serde_json::Value;
 
 use cdoc2::capsule::Capsule;
@@ -11,6 +8,11 @@ use cdoc2::capsule::ecc::EllipticCurve;
 use cdoc2::capsule::key_server::CapsuleUpload;
 use cdoc2::encrypt::{self, EncryptError, PreparedEncryption, Recipient};
 use cdoc2::header::RecipientRecord;
+
+mod tls;
+
+use tls::http_client;
+pub use tls::{EcdsaSigner, TlsIdentity};
 
 pub const RIA_KEYSERVER_ID: &str = "00000000-0000-0000-0000-000000000000";
 
@@ -28,26 +30,6 @@ impl KeyServer {
             upload_url: "https://cdoc2.id.ee:8443".to_owned(),
             fetch_url: "https://cdoc2.id.ee:8444".to_owned(),
         }
-    }
-}
-
-pub struct TlsIdentity {
-    certificate_chain: Vec<CertificateDer<'static>>,
-    private_key: PrivateKeyDer<'static>,
-}
-
-impl TlsIdentity {
-    pub fn new(certificate_chain: Vec<Vec<u8>>, private_key: Vec<u8>) -> Result<Self, Error> {
-        let private_key =
-            PrivateKeyDer::try_from(private_key).map_err(|_| Error::InvalidPrivateKey)?;
-        let certificate_chain = certificate_chain
-            .into_iter()
-            .map(CertificateDer::from)
-            .collect();
-        Ok(TlsIdentity {
-            certificate_chain,
-            private_key,
-        })
     }
 }
 
@@ -173,20 +155,4 @@ fn decode_field(body: &Value, name: &str) -> Result<Vec<u8>, Error> {
 
 fn capsules_url(server_url: &str) -> String {
     format!("{}/key-capsules", server_url.trim_end_matches('/'))
-}
-
-fn http_client(identity: Option<&TlsIdentity>) -> Result<reqwest::blocking::Client, Error> {
-    let builder = ClientConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
-        .with_platform_verifier()?;
-    let config = match identity {
-        Some(identity) => builder.with_client_auth_cert(
-            identity.certificate_chain.clone(),
-            identity.private_key.clone_key(),
-        )?,
-        None => builder.with_no_client_auth(),
-    };
-    let client = reqwest::blocking::Client::builder()
-        .tls_backend_preconfigured(config)
-        .build()?;
-    Ok(client)
 }
