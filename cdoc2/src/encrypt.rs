@@ -30,6 +30,8 @@ pub enum Recipient<'a> {
         key_label: &'a str,
         public_key: &'a EcPublicKey,
         keyserver_id: &'a str,
+        /// The recipient certificate's expiry, in seconds since the Unix epoch.
+        not_after: Option<u64>,
     },
 }
 
@@ -122,7 +124,8 @@ pub fn prepare(recipients: &[Recipient]) -> Result<PreparedEncryption, EncryptEr
                 key_label,
                 public_key,
                 keyserver_id,
-            } => CapsuleUpload::generate(public_key, key_label, keyserver_id, &fmk)
+                not_after,
+            } => CapsuleUpload::generate(public_key, key_label, keyserver_id, not_after, &fmk)
                 .map(PreparedRecord::Upload),
         };
         records.push(record.map_err(random_error)?);

@@ -1,3 +1,5 @@
+use std::time::{Duration, SystemTime};
+
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::Value;
@@ -52,11 +54,20 @@ pub enum Error {
 
 pub struct Client {
     servers: Vec<KeyServer>,
+    capsule_lifetime: Option<Duration>,
 }
 
 impl Client {
     pub fn new(servers: Vec<KeyServer>) -> Client {
-        Client { servers }
+        Client {
+            servers,
+            capsule_lifetime: None,
+        }
+    }
+
+    pub fn with_capsule_lifetime(mut self, lifetime: Duration) -> Client {
+        self.capsule_lifetime = Some(lifetime);
+        self
     }
 
     /// Like [`cdoc2::encrypt::prepare`], but also uploads the capsules of key server recipients,
@@ -78,11 +89,11 @@ impl Client {
         });
 
         let url = capsules_url(&server.upload_url);
-        let response = http_client(None)?
-            .post(url)
-            .json(&body)
-            .send()?
-            .error_for_status()?;
+        let mut request = http_client(None)?.post(url).json(&body);
+        if let Some(expiry) = self.requested_expiry(capsule) {
+            request = request.header("x-expiry-time", format_expiry(expiry));
+        }
+        let response = request.send()?.error_for_status()?;
 
         let header = |name: &str| response.headers().get(name)?.to_str().ok();
         let location =
@@ -92,12 +103,28 @@ impl Client {
             _ => return Err(Error::InvalidResponse("no transaction ID in Location")),
         };
         let expiry = header("x-expiry-time").map(parse_expiry).transpose()?;
+        let adjusted = header("x-expiry-time-adjusted")
+            .map_or(Ok(false), str::parse)
+            .map_err(|_| Error::InvalidResponse("invalid x-expiry-time-adjusted"))?;
 
         capsule.set_transaction_id(transaction_id);
         if let Some(expiry) = expiry {
-            capsule.set_expiry(expiry);
+            capsule.set_expiry(expiry, adjusted);
         }
         Ok(())
+    }
+
+    fn requested_expiry(&self, capsule: &CapsuleUpload) -> Option<u64> {
+        let lifetime_end = self.capsule_lifetime.map(|lifetime| {
+            let now = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default();
+            now.saturating_add(lifetime).as_secs()
+        });
+        [lifetime_end, capsule.not_after()]
+            .into_iter()
+            .flatten()
+            .min()
     }
 
     pub fn fetch(
@@ -157,6 +184,14 @@ fn is_valid_transaction_id(id: &str) -> bool {
         && id
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+fn format_expiry(expiry: u64) -> String {
+    let max = jiff::Timestamp::MAX.as_second();
+    let second = i64::try_from(expiry).map_or(max, |second| second.min(max));
+    jiff::Timestamp::from_second(second)
+        .expect("the second is in range")
+        .to_string()
 }
 
 fn parse_expiry(value: &str) -> Result<u64, Error> {
