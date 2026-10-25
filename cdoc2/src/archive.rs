@@ -28,12 +28,15 @@ impl<'a> From<&'a File> for FileEntry<'a> {
 }
 
 pub trait Sink {
-    fn create_file(&mut self, name: &str) -> io::Result<()>;
+    fn create_file(&mut self, name: &str, size: u64) -> io::Result<()>;
     fn append(&mut self, data: &[u8]) -> io::Result<()>;
+    fn finish_file(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 impl Sink for Vec<File> {
-    fn create_file(&mut self, name: &str) -> io::Result<()> {
+    fn create_file(&mut self, name: &str, _size: u64) -> io::Result<()> {
         self.push(File {
             name: name.to_owned(),
             data: Vec::new(),
@@ -80,7 +83,7 @@ pub(crate) fn unpack(
     sink: &mut impl Sink,
 ) -> Result<(), UnpackError> {
     let mut reader = ZlibDecoder::new(BufReader::new(compressed)).take(max_size.saturating_add(1));
-    let result = unpack_limited(&mut reader, sink);
+    let result = unpack_limited(&mut reader, max_size, sink);
     if reader.limit() == 0 {
         return Err(UnpackError::TooLarge(max_size));
     }
@@ -89,9 +92,10 @@ pub(crate) fn unpack(
 
 fn unpack_limited(
     reader: &mut Take<ZlibDecoder<impl BufRead>>,
+    max_size: u64,
     sink: &mut impl Sink,
 ) -> Result<(), UnpackError> {
-    read_files(&mut tar::Archive::new(&mut *reader), sink)?;
+    read_files(&mut tar::Archive::new(&mut *reader), max_size, sink)?;
 
     // https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html
     // "At the end of the archive file there shall be two 512-byte blocks filled with binary zeros,
@@ -114,9 +118,11 @@ fn unpack_limited(
 
 fn read_files(
     archive: &mut tar::Archive<impl Read>,
+    max_size: u64,
     sink: &mut impl Sink,
 ) -> Result<(), UnpackError> {
     let mut names = HashSet::new();
+    let mut total_size: u64 = 0;
 
     for entry in archive.entries().map_err(malformed)? {
         let mut entry = entry.map_err(malformed)?;
@@ -144,21 +150,32 @@ fn read_files(
         })?;
         check_file_name(&name, &mut names)?;
 
-        sink.create_file(&name).map_err(write_error)?;
-        copy_to_sink(&mut entry, sink)?;
+        let size = entry.size();
+        total_size = total_size.saturating_add(size);
+        if total_size > max_size {
+            return Err(UnpackError::TooLarge(max_size));
+        }
+
+        sink.create_file(&name, size).map_err(write_error)?;
+        if copy_to_sink(&mut entry, sink)? != size {
+            return Err(UnpackError::Malformed(format!("{name:?} is truncated")));
+        }
+        sink.finish_file().map_err(write_error)?;
     }
 
     Ok(())
 }
 
-fn copy_to_sink(entry: &mut impl Read, sink: &mut impl Sink) -> Result<(), UnpackError> {
+fn copy_to_sink(entry: &mut impl Read, sink: &mut impl Sink) -> Result<u64, UnpackError> {
     let mut buf = [0; 8192];
+    let mut copied = 0;
     loop {
         let n = entry.read(&mut buf).map_err(malformed)?;
         if n == 0 {
-            return Ok(());
+            return Ok(copied);
         }
         sink.append(&buf[..n]).map_err(write_error)?;
+        copied += n as u64;
     }
 }
 
