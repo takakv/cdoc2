@@ -3,7 +3,7 @@ use elliptic_curve::sec1::{FromSec1Point, ModulusSize, ToSec1Point};
 use elliptic_curve::{Curve, CurveArithmetic, FieldBytes, Generate, PublicKey, SecretKey};
 
 use crate::capsule::{Capsule, encrypt_fmk, expand_kek};
-use crate::crypto::{FMK_LEN, HashAlgorithm};
+use crate::crypto::{FMK_LEN, HashAlgorithm, KEK_LEN};
 use crate::header::RecipientRecord;
 
 const UNCOMPRESSED_POINT_TAG: u8 = 0x04;
@@ -32,6 +32,12 @@ pub enum EllipticCurve {
     Secp256r1,
     Secp384r1,
     Secp521r1,
+}
+
+/// A private key that computes ECDH itself, e.g. an ID card private key.
+pub trait EcdhKey {
+    fn curve(&self) -> EllipticCurve;
+    fn ecdh(&self, sender_public_key: &EcPublicKey) -> Result<Vec<u8>, String>;
 }
 
 #[derive(Debug, Clone)]
@@ -76,7 +82,7 @@ impl EcPublicKey {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum EccKekError {
     #[error("the key is not on the recipient's curve")]
     CurveMismatch,
@@ -84,6 +90,8 @@ pub enum EccKekError {
     InvalidSenderKey,
     #[error("the shared secret has the wrong length for the curve: {0} bytes")]
     InvalidSharedSecretLength(usize),
+    #[error("the key could not compute ECDH: {0}")]
+    Ecdh(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,7 +105,7 @@ pub struct EccPublicKeyCapsule {
 impl EccPublicKeyCapsule {
     pub(crate) fn generate(
         recipient: &EcPublicKey,
-    ) -> Result<(Self, [u8; FMK_LEN]), getrandom::Error> {
+    ) -> Result<(Self, [u8; KEK_LEN]), getrandom::Error> {
         match recipient {
             EcPublicKey::P256(key) => Self::generate_curve(key),
             EcPublicKey::P384(key) => Self::generate_curve(key),
@@ -107,7 +115,7 @@ impl EccPublicKeyCapsule {
 
     fn generate_curve<C: NistCurve>(
         recipient: &PublicKey<C>,
-    ) -> Result<(Self, [u8; FMK_LEN]), getrandom::Error> {
+    ) -> Result<(Self, [u8; KEK_LEN]), getrandom::Error> {
         let ephemeral_secret = EphemeralSecret::<C>::try_generate()?;
         let capsule = Self {
             curve: C::CURVE,
@@ -126,7 +134,7 @@ impl EccPublicKeyCapsule {
     pub(crate) fn derive_kek(
         &self,
         secret_key: &EcSecretKey,
-    ) -> Result<[u8; FMK_LEN], EccKekError> {
+    ) -> Result<[u8; KEK_LEN], EccKekError> {
         match secret_key {
             EcSecretKey::P256(key) => self.derive_curve_kek(key),
             EcSecretKey::P384(key) => self.derive_curve_kek(key),
@@ -137,7 +145,7 @@ impl EccPublicKeyCapsule {
     fn derive_curve_kek<C: NistCurve>(
         &self,
         secret_key: &SecretKey<C>,
-    ) -> Result<[u8; FMK_LEN], EccKekError> {
+    ) -> Result<[u8; KEK_LEN], EccKekError> {
         if self.curve != C::CURVE {
             return Err(EccKekError::CurveMismatch);
         }
@@ -146,13 +154,20 @@ impl EccPublicKeyCapsule {
         Ok(self.kek_from_shared_secret(&shared_secret))
     }
 
-    pub fn sender_public_key(&self) -> Result<&[u8], EccKekError> {
-        match self.curve {
-            EllipticCurve::Secp256r1 => self.sender_point::<p256::NistP256>().map(drop),
-            EllipticCurve::Secp384r1 => self.sender_point::<p384::NistP384>().map(drop),
-            EllipticCurve::Secp521r1 => self.sender_point::<p521::NistP521>().map(drop),
-        }?;
-        Ok(&self.sender_public_key)
+    pub(crate) fn derive_kek_with(&self, key: &dyn EcdhKey) -> Result<[u8; KEK_LEN], EccKekError> {
+        if key.curve() != self.curve {
+            return Err(EccKekError::CurveMismatch);
+        }
+        let shared_secret = key.ecdh(&self.sender_key()?).map_err(EccKekError::Ecdh)?;
+        self.derive_kek_from_shared_secret(&shared_secret)
+    }
+
+    fn sender_key(&self) -> Result<EcPublicKey, EccKekError> {
+        Ok(match self.curve {
+            EllipticCurve::Secp256r1 => EcPublicKey::P256(self.sender_point()?),
+            EllipticCurve::Secp384r1 => EcPublicKey::P384(self.sender_point()?),
+            EllipticCurve::Secp521r1 => EcPublicKey::P521(self.sender_point()?),
+        })
     }
 
     fn sender_point<C: NistCurve>(&self) -> Result<PublicKey<C>, EccKekError> {
@@ -163,10 +178,10 @@ impl EccPublicKeyCapsule {
             .map_err(|_| EccKekError::InvalidSenderKey)
     }
 
-    pub(crate) fn derive_kek_from_shared_secret(
+    fn derive_kek_from_shared_secret(
         &self,
         shared_secret: &[u8],
-    ) -> Result<[u8; FMK_LEN], EccKekError> {
+    ) -> Result<[u8; KEK_LEN], EccKekError> {
         match self.curve {
             EllipticCurve::Secp256r1 => {
                 self.kek_from_raw_shared_secret::<p256::NistP256>(shared_secret)
@@ -183,13 +198,13 @@ impl EccPublicKeyCapsule {
     fn kek_from_raw_shared_secret<C: Curve>(
         &self,
         shared_secret: &[u8],
-    ) -> Result<[u8; FMK_LEN], EccKekError> {
+    ) -> Result<[u8; KEK_LEN], EccKekError> {
         let bytes = FieldBytes::<C>::try_from(shared_secret)
             .map_err(|_| EccKekError::InvalidSharedSecretLength(shared_secret.len()))?;
         Ok(self.kek_from_shared_secret(&SharedSecret::<C>::from(bytes)))
     }
 
-    fn kek_from_shared_secret<C: Curve>(&self, shared_secret: &SharedSecret<C>) -> [u8; FMK_LEN] {
+    fn kek_from_shared_secret<C: Curve>(&self, shared_secret: &SharedSecret<C>) -> [u8; KEK_LEN] {
         let hk = shared_secret.extract::<HashAlgorithm>(Some(b"CDOC20kekpremaster"));
         expand_kek(&hk, &[&self.recipient_public_key, &self.sender_public_key])
     }

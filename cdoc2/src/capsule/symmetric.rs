@@ -1,5 +1,5 @@
 use crate::capsule::{Capsule, SALT_LEN, derive_symmetric_kek, encrypt_fmk};
-use crate::crypto::{FMK_LEN, random_bytes};
+use crate::crypto::{FMK_LEN, KEK_LEN, random_bytes};
 use crate::header::RecipientRecord;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,7 +15,7 @@ impl SymmetricKeyCapsule {
         })
     }
 
-    pub(crate) fn derive_kek(&self, key: &[u8], key_label: &str) -> [u8; FMK_LEN] {
+    pub(crate) fn derive_kek(&self, key: &[u8], key_label: &str) -> [u8; KEK_LEN] {
         derive_symmetric_kek(&self.salt, key, key_label)
     }
 }

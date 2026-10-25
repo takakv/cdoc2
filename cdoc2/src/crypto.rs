@@ -2,6 +2,7 @@ use hmac::digest::MacError;
 use hmac::{KeyInit, Mac};
 
 pub(crate) const FMK_LEN: usize = 32;
+pub(crate) const KEK_LEN: usize = FMK_LEN;
 pub(crate) const HMAC_LEN: usize = 32;
 
 pub(crate) type HashAlgorithm = sha2::Sha256;

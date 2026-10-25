@@ -1,10 +1,10 @@
 use std::io::{Cursor, Read, Seek};
 
 use crate::archive::{self, File, Sink, UnpackError};
-use crate::capsule::ecc::{EcSecretKey, EccKekError};
+use crate::capsule::ecc::{EcSecretKey, EccKekError, EcdhKey};
 use crate::capsule::{Capsule, decrypt_fmk};
 use crate::container::{Container, ContainerHead};
-use crate::crypto::{AuthenticatedHeader, FMK_LEN, authenticate_header};
+use crate::crypto::{AuthenticatedHeader, FMK_LEN, KEK_LEN, authenticate_header};
 use crate::header::{FmkEncryptionMethod, RecipientRecord};
 use crate::payload::{
     PayloadError, PayloadReader, check_payload_encryption_method, verify_payload,
@@ -40,7 +40,7 @@ pub enum DecryptionKey<'a> {
     Symmetric(&'a [u8]),
     Password(&'a str),
     EcSecretKey(&'a EcSecretKey),
-    EcdhSharedSecret(&'a [u8]),
+    Ecdh(&'a dyn EcdhKey),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,7 +126,7 @@ fn derive_kek(
     record: &RecipientRecord,
     key: &DecryptionKey,
     options: DecryptOptions,
-) -> Result<[u8; FMK_LEN], DecryptError> {
+) -> Result<[u8; KEK_LEN], DecryptError> {
     match (&record.capsule, *key) {
         (Capsule::Symmetric(capsule), DecryptionKey::Symmetric(key)) => {
             Ok(capsule.derive_kek(key, &record.key_label))
@@ -143,9 +143,7 @@ fn derive_kek(
         (Capsule::Ecc(capsule), DecryptionKey::EcSecretKey(secret_key)) => {
             Ok(capsule.derive_kek(secret_key)?)
         }
-        (Capsule::Ecc(capsule), DecryptionKey::EcdhSharedSecret(shared_secret)) => {
-            Ok(capsule.derive_kek_from_shared_secret(shared_secret)?)
-        }
+        (Capsule::Ecc(capsule), DecryptionKey::Ecdh(key)) => Ok(capsule.derive_kek_with(key)?),
         (Capsule::KeyServer(_), _) => Err(DecryptError::CapsuleNotFetched),
         _ => Err(DecryptError::KeyTypeMismatch),
     }
