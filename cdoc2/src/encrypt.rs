@@ -56,6 +56,10 @@ pub enum EncryptError {
     EmptyKeyLabel,
     #[error("key label {0:?} is used by more than one recipient")]
     DuplicateKeyLabel(String),
+    #[error("the key for {0:?} must be at least {MIN_KEY_LEN} bytes")]
+    KeyTooShort(String),
+    #[error("the password for {0:?} must be at least {MIN_PASSWORD_CHARS} characters")]
+    PasswordTooShort(String),
     #[error(transparent)]
     FileName(#[from] FileNameError),
     #[error("the header is too large (too many recipients or too long key labels)")]
@@ -104,7 +108,7 @@ pub fn prepare(recipients: &[Recipient]) -> Result<PreparedEncryption, EncryptEr
     if recipients.is_empty() {
         return Err(EncryptError::NoRecipients);
     }
-    check_key_labels(recipients)?;
+    check_recipients(recipients)?;
 
     let fmk = generate_fmk().map_err(random_error)?;
 
@@ -224,7 +228,10 @@ fn write_error(e: io::Error) -> EncryptError {
     }
 }
 
-fn check_key_labels(recipients: &[Recipient]) -> Result<(), EncryptError> {
+const MIN_KEY_LEN: usize = 32;
+const MIN_PASSWORD_CHARS: usize = 20;
+
+fn check_recipients(recipients: &[Recipient]) -> Result<(), EncryptError> {
     let mut seen = HashSet::new();
     for recipient in recipients {
         let label = recipient.key_label();
@@ -233,6 +240,17 @@ fn check_key_labels(recipients: &[Recipient]) -> Result<(), EncryptError> {
         }
         if !seen.insert(label) {
             return Err(EncryptError::DuplicateKeyLabel(label.to_owned()));
+        }
+        match *recipient {
+            Recipient::Symmetric { key, .. } if key.len() < MIN_KEY_LEN => {
+                return Err(EncryptError::KeyTooShort(label.to_owned()));
+            }
+            Recipient::Password { password, .. }
+                if password.chars().count() < MIN_PASSWORD_CHARS =>
+            {
+                return Err(EncryptError::PasswordTooShort(label.to_owned()));
+            }
+            _ => {}
         }
     }
     Ok(())
