@@ -87,9 +87,10 @@ pub enum EccKekError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct EccPublicKeyCapsule {
-    pub(crate) curve: EllipticCurve,
-    pub(crate) recipient_public_key: Vec<u8>,
+    pub curve: EllipticCurve,
+    pub recipient_public_key: Vec<u8>,
     pub(crate) sender_public_key: Vec<u8>,
 }
 

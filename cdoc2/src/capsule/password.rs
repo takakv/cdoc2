@@ -10,10 +10,11 @@ const PASSWORD_KEY_LEN: usize = 32;
 type Pbkdf2Hash = sha2::Sha256;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Pbkdf2Capsule {
-    pub(crate) salt: Vec<u8>,
-    pub(crate) password_salt: Vec<u8>,
-    pub(crate) kdf_iterations: u32,
+    pub salt: Vec<u8>,
+    pub password_salt: Vec<u8>,
+    pub kdf_iterations: u32,
 }
 
 impl Pbkdf2Capsule {

@@ -5,6 +5,7 @@ use crate::header::RecipientRecord;
 use crate::key_label;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct KeyServerCapsule {
     pub curve: EllipticCurve,
     pub recipient_public_key: Vec<u8>,

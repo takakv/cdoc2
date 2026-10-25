@@ -3,8 +3,9 @@ use crate::crypto::{FMK_LEN, random_bytes};
 use crate::header::RecipientRecord;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SymmetricKeyCapsule {
-    pub(crate) salt: Vec<u8>,
+    pub salt: Vec<u8>,
 }
 
 impl SymmetricKeyCapsule {
