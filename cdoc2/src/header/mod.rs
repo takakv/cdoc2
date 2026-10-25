@@ -6,6 +6,7 @@ mod fb;
 
 use crate::capsule::Capsule;
 use crate::capsule::ecc::{EcPublicKey, EccPublicKeyCapsule};
+use crate::crypto::FMK_LEN;
 use crate::key_label;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +80,19 @@ impl Header {
 }
 
 impl RecipientRecord {
+    pub(crate) fn new(
+        capsule: Capsule,
+        key_label: impl Into<String>,
+        encrypted_fmk: [u8; FMK_LEN],
+    ) -> RecipientRecord {
+        RecipientRecord {
+            capsule,
+            key_label: key_label.into(),
+            encrypted_fmk: encrypted_fmk.to_vec(),
+            fmk_encryption_method: FmkEncryptionMethod::Xor,
+        }
+    }
+
     fn is_for(&self, id: RecipientId) -> bool {
         match (&self.capsule, id) {
             (Capsule::Ecc(capsule), RecipientId::EcPublicKey(key)) => {

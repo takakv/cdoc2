@@ -1,4 +1,4 @@
-use crate::capsule::{Capsule, SALT_LEN, derive_symmetric_kek, record_with_kek};
+use crate::capsule::{Capsule, SALT_LEN, derive_symmetric_kek, encrypt_fmk};
 use crate::crypto::{FMK_LEN, random_bytes};
 use crate::header::RecipientRecord;
 
@@ -26,10 +26,9 @@ pub(crate) fn recipient_record(
 ) -> Result<RecipientRecord, getrandom::Error> {
     let capsule = SymmetricKeyCapsule::generate()?;
     let kek = capsule.derive_kek(key, key_label);
-    Ok(record_with_kek(
+    Ok(RecipientRecord::new(
         Capsule::Symmetric(capsule),
         key_label,
-        &kek,
-        fmk,
+        encrypt_fmk(fmk, &kek),
     ))
 }

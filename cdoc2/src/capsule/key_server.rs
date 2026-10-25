@@ -1,7 +1,7 @@
 use crate::capsule::ecc::{EcPublicKey, EccPublicKeyCapsule, EllipticCurve};
 use crate::capsule::{Capsule, encrypt_fmk};
 use crate::crypto::FMK_LEN;
-use crate::header::{FmkEncryptionMethod, RecipientRecord};
+use crate::header::RecipientRecord;
 use crate::key_label;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,7 +15,7 @@ pub struct KeyServerCapsule {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapsuleUpload {
     key_label: String,
-    encrypted_fmk: Vec<u8>,
+    encrypted_fmk: [u8; FMK_LEN],
     capsule: KeyServerCapsule,
     sender_public_key: Vec<u8>,
     not_after: Option<u64>,
@@ -34,7 +34,7 @@ impl CapsuleUpload {
         let (ecc, kek) = EccPublicKeyCapsule::generate(public_key)?;
         Ok(CapsuleUpload {
             key_label: key_label.to_owned(),
-            encrypted_fmk: encrypt_fmk(fmk, &kek).to_vec(),
+            encrypted_fmk: encrypt_fmk(fmk, &kek),
             capsule: KeyServerCapsule {
                 curve: ecc.curve,
                 recipient_public_key: ecc.recipient_public_key,
@@ -95,11 +95,10 @@ impl CapsuleUpload {
     }
 
     pub(crate) fn into_record(self) -> RecipientRecord {
-        RecipientRecord {
-            capsule: Capsule::KeyServer(self.capsule),
-            key_label: self.key_label,
-            encrypted_fmk: self.encrypted_fmk,
-            fmk_encryption_method: FmkEncryptionMethod::Xor,
-        }
+        RecipientRecord::new(
+            Capsule::KeyServer(self.capsule),
+            self.key_label,
+            self.encrypted_fmk,
+        )
     }
 }
