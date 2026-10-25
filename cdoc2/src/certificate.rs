@@ -15,6 +15,7 @@ use crate::key_label::{self, CertLabel, EidLabel, EidType};
 pub struct CertificateKey {
     pub public_key: EcPublicKey,
     pub key_label: String,
+    pub not_after: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -46,9 +47,11 @@ pub fn parse(der: &[u8], file_name: &str) -> Result<CertificateKey, CertificateE
         .to_der()
         .map_err(|_| CertificateError::Invalid)?;
     let public_key = public_key(&spki).ok_or(CertificateError::UnsupportedKey)?;
+    let not_after = cert.tbs_certificate().validity().not_after;
     Ok(CertificateKey {
         public_key,
         key_label: key_label(&cert, der, file_name),
+        not_after: not_after.to_unix_duration().as_secs(),
     })
 }
 
