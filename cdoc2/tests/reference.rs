@@ -1,8 +1,8 @@
 use cdoc2::archive::File;
-use cdoc2::capsule::ecc::EcSecretKey;
 use cdoc2::container::Container;
 use cdoc2::decrypt::{DecryptError, DecryptOptions, DecryptionKey, decrypt};
 use cdoc2::header::RecipientId;
+use cdoc2::keys::EcSecretKey;
 
 fn decrypt_reference_container(bytes: &[u8], id: RecipientId, key: DecryptionKey) -> Vec<File> {
     let container = Container::parse(bytes).unwrap();

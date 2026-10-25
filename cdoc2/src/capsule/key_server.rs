@@ -1,8 +1,9 @@
-use crate::capsule::ecc::{EcPublicKey, EccPublicKeyCapsule, EllipticCurve};
+use crate::capsule::ecc::EccPublicKeyCapsule;
 use crate::capsule::{Capsule, EncryptedFmk, encrypt_fmk};
 use crate::crypto::FMK_LEN;
 use crate::header::RecipientRecord;
 use crate::key_label;
+use crate::keys::{EcPublicKey, EllipticCurve};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]

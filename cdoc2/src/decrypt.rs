@@ -1,11 +1,12 @@
 use std::io::{Cursor, Read, Seek};
 
 use crate::archive::{self, File, Sink, UnpackError};
-use crate::capsule::ecc::{EcSecretKey, EccKekError, EcdhKey};
+use crate::capsule::ecc::EccKekError;
 use crate::capsule::{Capsule, decrypt_fmk};
 use crate::container::{Container, ContainerHead};
 use crate::crypto::{AuthenticatedHeader, FMK_LEN, KEK_LEN, authenticate_header};
 use crate::header::{FmkEncryptionMethod, RecipientRecord};
+use crate::keys::{EcSecretKey, EcdhKey};
 use crate::payload::{
     PayloadError, PayloadReader, check_payload_encryption_method, verify_payload,
 };

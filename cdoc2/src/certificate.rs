@@ -8,8 +8,8 @@ use x509_cert::der::{Any, Decode, Encode, Tag, Tagged};
 use x509_cert::ext::pkix::name::DirectoryString;
 use x509_cert::ext::pkix::{CertificatePolicies, KeyUsage};
 
-use crate::capsule::ecc::EcPublicKey;
 use crate::key_label::{self, CertLabel, EidLabel, EidType};
+use crate::keys::EcPublicKey;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CertificateKey {

@@ -5,10 +5,10 @@ use base64::engine::general_purpose::STANDARD;
 use serde_json::Value;
 
 use cdoc2::capsule::Capsule;
-use cdoc2::capsule::ecc::EllipticCurve;
 use cdoc2::capsule::key_server::CapsuleUpload;
 use cdoc2::encrypt::{self, EncryptError, PreparedEncryption, Recipient};
 use cdoc2::header::RecipientRecord;
+use cdoc2::keys::EllipticCurve;
 
 mod tls;
 

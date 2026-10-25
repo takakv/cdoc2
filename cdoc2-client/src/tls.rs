@@ -7,7 +7,7 @@ use rustls::sign::{CertifiedKey, Signer, SigningKey};
 use rustls::{ClientConfig, SignatureAlgorithm, SignatureScheme};
 use rustls_platform_verifier::BuilderVerifierExt;
 
-use cdoc2::capsule::ecc::EllipticCurve;
+use cdoc2::keys::EllipticCurve;
 
 use crate::Error;
 

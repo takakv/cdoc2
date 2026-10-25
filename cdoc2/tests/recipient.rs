@@ -1,8 +1,8 @@
-use cdoc2::capsule::ecc::{EcPublicKey, EcSecretKey};
 use cdoc2::container::Container;
 use cdoc2::encrypt::{EncryptError, Recipient, encrypt, prepare};
 use cdoc2::header::RecipientId;
 use cdoc2::key_label;
+use cdoc2::keys::{EcPublicKey, EcSecretKey};
 
 fn ec_public_key(byte: u8) -> EcPublicKey {
     EcSecretKey::P256(p256::SecretKey::from_slice(&[byte; 32]).unwrap()).public_key()

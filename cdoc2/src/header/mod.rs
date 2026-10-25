@@ -4,9 +4,10 @@ mod generated;
 
 mod fb;
 
-use crate::capsule::ecc::{EcPublicKey, EccPublicKeyCapsule};
+use crate::capsule::ecc::EccPublicKeyCapsule;
 use crate::capsule::{Capsule, EncryptedFmk};
 use crate::key_label;
+use crate::keys::EcPublicKey;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Header {

@@ -4,12 +4,13 @@ use std::io::{self, Read, Write};
 use crate::IoError;
 use crate::aead_stream::{AeadError, NONCE_LEN};
 use crate::archive::{File, FileEntry, FileNameError, PackError, check_file_names, pack};
-use crate::capsule::ecc::{self, EcPublicKey};
+use crate::capsule::ecc;
 use crate::capsule::key_server::CapsuleUpload;
 use crate::capsule::{password, symmetric};
 use crate::container::encode_head;
 use crate::crypto::{FMK_LEN, compute_header_hmac, generate_fmk, random_bytes};
 use crate::header::{Header, PayloadEncryptionMethod, RecipientRecord};
+use crate::keys::EcPublicKey;
 use crate::payload::PayloadWriter;
 
 #[derive(derive_more::Debug, Clone, Copy)]

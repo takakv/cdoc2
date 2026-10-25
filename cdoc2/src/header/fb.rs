@@ -4,10 +4,11 @@ use super::generated::ee::cyber::cdoc_2::fbs::header as fb;
 use super::generated::ee::cyber::cdoc_2::fbs::recipients as fb_rec;
 use super::{FmkEncryptionMethod, Header, HeaderError, PayloadEncryptionMethod, RecipientRecord};
 use crate::capsule::Capsule;
-use crate::capsule::ecc::{EccPublicKeyCapsule, EllipticCurve};
+use crate::capsule::ecc::EccPublicKeyCapsule;
 use crate::capsule::key_server::KeyServerCapsule;
 use crate::capsule::password::Pbkdf2Capsule;
 use crate::capsule::symmetric::SymmetricKeyCapsule;
+use crate::keys::EllipticCurve;
 
 pub(super) fn header_from_bytes(bytes: &[u8]) -> Result<Header, HeaderError> {
     let header = fb::root_as_header(bytes).map_err(|e| HeaderError::Malformed(e.to_string()))?;

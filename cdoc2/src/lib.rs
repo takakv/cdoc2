@@ -14,6 +14,7 @@ pub mod hazmat;
 pub mod header;
 mod io_error;
 pub mod key_label;
+pub mod keys;
 pub mod payload;
 
 pub use io_error::IoError;
