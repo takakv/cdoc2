@@ -17,6 +17,8 @@ pub enum DecryptError {
     KeyTypeMismatch,
     #[error("the recipient's key capsule must first be fetched from its key server")]
     CapsuleNotFetched,
+    #[error("this library cannot decrypt for the recipient's capsule type")]
+    UnsupportedCapsule,
     #[error("unsupported FMK encryption method")]
     UnsupportedFmkEncryptionMethod,
     #[error("encrypted FMK must be {FMK_LEN} bytes, got {0}")]
@@ -146,6 +148,7 @@ fn derive_kek(
         }
         (Capsule::Ecc(capsule), DecryptionKey::Ecdh(key)) => Ok(capsule.derive_kek_with(key)?),
         (Capsule::KeyServer(_), _) => Err(DecryptError::CapsuleNotFetched),
+        (Capsule::Unsupported(_), _) => Err(DecryptError::UnsupportedCapsule),
         _ => Err(DecryptError::KeyTypeMismatch),
     }
 }

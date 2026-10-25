@@ -19,7 +19,24 @@ pub enum Capsule {
     Password(Pbkdf2Capsule),
     Ecc(EccPublicKeyCapsule),
     KeyServer(KeyServerCapsule),
-    Unsupported,
+    Unsupported(UnsupportedCapsule),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum UnsupportedCapsule {
+    RsaPublicKey {
+        recipient_public_key: Vec<u8>,
+    },
+    RsaKeyServer {
+        recipient_public_key: Vec<u8>,
+        keyserver_id: String,
+        transaction_id: String,
+    },
+    KeyShares {
+        recipient_id: String,
+    },
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

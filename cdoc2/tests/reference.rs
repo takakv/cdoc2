@@ -1,4 +1,5 @@
 use cdoc2::archive::File;
+use cdoc2::capsule::{Capsule, UnsupportedCapsule};
 use cdoc2::container::Container;
 use cdoc2::decrypt::{DecryptError, DecryptOptions, DecryptionKey, decrypt};
 use cdoc2::header::RecipientId;
@@ -59,4 +60,21 @@ fn ec_key() {
     let id = RecipientId::EcPublicKey(&key.public_key());
     let files = decrypt_reference_container(container, id, DecryptionKey::EcSecretKey(&key));
     assert_eq!(files, lorem_ipsum());
+}
+
+#[test]
+fn rsa_public_key() {
+    let container = Container::parse(include_bytes!("data/ref-rsa.cdoc2")).unwrap();
+    let record = &container.head.header.recipients[0];
+    let rsa = UnsupportedCapsule::RsaPublicKey {
+        recipient_public_key: include_bytes!("data/ref-rsa-pub.der").to_vec(),
+    };
+    assert_eq!(record.capsule, Capsule::Unsupported(rsa));
+    let decrypted = decrypt(
+        &container,
+        record,
+        &DecryptionKey::Symmetric(&[1; 32]),
+        DecryptOptions::default(),
+    );
+    assert_eq!(decrypted, Err(DecryptError::UnsupportedCapsule));
 }

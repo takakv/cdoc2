@@ -3,11 +3,11 @@ use flatbuffers::{FlatBufferBuilder, WIPOffset};
 use super::generated::ee::cyber::cdoc_2::fbs::header as fb;
 use super::generated::ee::cyber::cdoc_2::fbs::recipients as fb_rec;
 use super::{FmkEncryptionMethod, Header, HeaderError, PayloadEncryptionMethod, RecipientRecord};
-use crate::capsule::Capsule;
 use crate::capsule::ecc::EccPublicKeyCapsule;
 use crate::capsule::key_server::KeyServerCapsule;
 use crate::capsule::password::Pbkdf2Capsule;
 use crate::capsule::symmetric::SymmetricKeyCapsule;
+use crate::capsule::{Capsule, UnsupportedCapsule};
 use crate::keys::EllipticCurve;
 
 pub(super) fn header_from_bytes(bytes: &[u8]) -> Result<Header, HeaderError> {
@@ -64,7 +64,7 @@ fn record_from_fb(record: fb::RecipientRecord<'_>) -> RecipientRecord {
     };
 
     RecipientRecord {
-        capsule: capsule_from_fb(record).unwrap_or(Capsule::Unsupported),
+        capsule: capsule_from_fb(record),
         key_label: record.key_label().to_owned(),
         encrypted_fmk: record.encrypted_fmk().bytes().to_vec(),
         fmk_encryption_method,
@@ -92,7 +92,7 @@ fn record_to_fb<'a>(
             fb::Capsule::recipients_KeyServerCapsule,
             key_server_capsule_to_fb(fbb, c).as_union_value(),
         ),
-        Capsule::Unsupported => panic!("cannot write an unsupported capsule"),
+        Capsule::Unsupported(_) => panic!("cannot write an unsupported capsule"),
     };
 
     let fmk_encryption_method = match record.fmk_encryption_method {
@@ -114,17 +114,26 @@ fn record_to_fb<'a>(
     )
 }
 
-fn capsule_from_fb(record: fb::RecipientRecord<'_>) -> Option<Capsule> {
+fn capsule_from_fb(record: fb::RecipientRecord<'_>) -> Capsule {
+    let unknown = Capsule::Unsupported(UnsupportedCapsule::Unknown);
     if let Some(c) = record.capsule_as_recipients_symmetric_key_capsule() {
-        Some(Capsule::Symmetric(symmetric_capsule_from_fb(c)))
+        Capsule::Symmetric(symmetric_capsule_from_fb(c))
     } else if let Some(c) = record.capsule_as_recipients_pbkdf2_capsule() {
-        password_capsule_from_fb(c).map(Capsule::Password)
+        password_capsule_from_fb(c).map_or(unknown, Capsule::Password)
     } else if let Some(c) = record.capsule_as_recipients_eccpublic_key_capsule() {
-        ecc_capsule_from_fb(c).map(Capsule::Ecc)
+        ecc_capsule_from_fb(c).map_or(unknown, Capsule::Ecc)
     } else if let Some(c) = record.capsule_as_recipients_key_server_capsule() {
-        key_server_capsule_from_fb(c).map(Capsule::KeyServer)
+        key_server_capsule_from_fb(c).unwrap_or(unknown)
+    } else if let Some(c) = record.capsule_as_recipients_rsapublic_key_capsule() {
+        Capsule::Unsupported(UnsupportedCapsule::RsaPublicKey {
+            recipient_public_key: c.recipient_public_key().bytes().to_vec(),
+        })
+    } else if let Some(c) = record.capsule_as_recipients_key_shares_capsule() {
+        Capsule::Unsupported(UnsupportedCapsule::KeyShares {
+            recipient_id: c.recipient_id().to_owned(),
+        })
     } else {
-        None
+        unknown
     }
 }
 
@@ -201,14 +210,23 @@ fn ecc_capsule_to_fb<'a>(
     )
 }
 
-fn key_server_capsule_from_fb(capsule: fb_rec::KeyServerCapsule<'_>) -> Option<KeyServerCapsule> {
+fn key_server_capsule_from_fb(capsule: fb_rec::KeyServerCapsule<'_>) -> Option<Capsule> {
+    let keyserver_id = capsule.keyserver_id().to_owned();
+    let transaction_id = capsule.transaction_id().to_owned();
+    if let Some(details) = capsule.recipient_key_details_as_rsa_key_details() {
+        return Some(Capsule::Unsupported(UnsupportedCapsule::RsaKeyServer {
+            recipient_public_key: details.recipient_public_key().bytes().to_vec(),
+            keyserver_id,
+            transaction_id,
+        }));
+    }
     let details = capsule.recipient_key_details_as_ecc_key_details()?;
-    Some(KeyServerCapsule {
+    Some(Capsule::KeyServer(KeyServerCapsule {
         curve: curve_from_fb(details.curve())?,
         recipient_public_key: details.recipient_public_key().bytes().to_vec(),
-        keyserver_id: capsule.keyserver_id().to_owned(),
-        transaction_id: capsule.transaction_id().to_owned(),
-    })
+        keyserver_id,
+        transaction_id,
+    }))
 }
 
 fn key_server_capsule_to_fb<'a>(
