@@ -1,10 +1,16 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use reqwest::header::LOCATION;
+use rustls::ClientConfig;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls_platform_verifier::BuilderVerifierExt;
+use serde_json::Value;
 
+use cdoc2::capsule::Capsule;
 use cdoc2::capsule::ecc::EllipticCurve;
 use cdoc2::capsule::key_server::CapsuleUpload;
 use cdoc2::encrypt::{self, EncryptError, PreparedEncryption, Recipient};
+use cdoc2::header::RecipientRecord;
 
 pub const RIA_KEYSERVER_ID: &str = "00000000-0000-0000-0000-000000000000";
 
@@ -25,27 +31,53 @@ impl KeyServer {
     }
 }
 
+pub struct TlsIdentity {
+    certificate_chain: Vec<CertificateDer<'static>>,
+    private_key: PrivateKeyDer<'static>,
+}
+
+impl TlsIdentity {
+    pub fn new(certificate_chain: Vec<Vec<u8>>, private_key: Vec<u8>) -> Result<Self, Error> {
+        let private_key =
+            PrivateKeyDer::try_from(private_key).map_err(|_| Error::InvalidPrivateKey)?;
+        let certificate_chain = certificate_chain
+            .into_iter()
+            .map(CertificateDer::from)
+            .collect();
+        Ok(TlsIdentity {
+            certificate_chain,
+            private_key,
+        })
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
     Encrypt(#[from] EncryptError),
     #[error("no configuration for key server {0:?}")]
     UnknownKeyServer(String),
+    #[error("the recipient's key capsule is not on a key server")]
+    NotKeyServerRecipient,
+    #[error("invalid transaction ID {0:?}")]
+    InvalidTransactionId(String),
+    #[error("invalid private key")]
+    InvalidPrivateKey,
+    #[error(transparent)]
+    Tls(#[from] rustls::Error),
     #[error(transparent)]
     Http(#[from] reqwest::Error),
-    #[error("the key server returned no usable transaction ID")]
-    InvalidTransactionId,
+    #[error("the key server sent an invalid response: {0}")]
+    InvalidResponse(&'static str),
 }
 
 pub struct Client {
-    http: reqwest::blocking::Client,
     servers: Vec<KeyServer>,
 }
 
 impl Client {
-    pub fn new(servers: Vec<KeyServer>) -> Result<Client, Error> {
-        let http = reqwest::blocking::Client::builder().build()?;
-        Ok(Client { http, servers })
+    pub fn new(servers: Vec<KeyServer>) -> Client {
+        Client { servers }
     }
 
     /// Like [`cdoc2::encrypt::prepare`], but also uploads the capsules of key server recipients,
@@ -65,15 +97,48 @@ impl Client {
             "ephemeral_key_material": STANDARD.encode(capsule.sender_public_key()),
             "capsule_type": capsule_type(capsule.curve()),
         });
-        let url = format!("{}/key-capsules", server.upload_url.trim_end_matches('/'));
-        let response = self.http.post(url).json(&body).send()?.error_for_status()?;
-        response
+        let url = capsules_url(&server.upload_url);
+        let response = http_client(None)?.post(url).json(&body).send()?;
+        let response = response.error_for_status()?;
+        let location = response
             .headers()
             .get(LOCATION)
-            .and_then(|v| v.to_str().ok())
-            .and_then(transaction_id)
-            .map(str::to_owned)
-            .ok_or(Error::InvalidTransactionId)
+            .and_then(|v| v.to_str().ok());
+        match location.and_then(|location| location.rsplit_once("/key-capsules/")) {
+            Some((_, id)) if is_valid_transaction_id(id) => Ok(id.to_owned()),
+            _ => Err(Error::InvalidResponse("no transaction ID in Location")),
+        }
+    }
+
+    pub fn fetch(
+        &self,
+        record: &RecipientRecord,
+        identity: &TlsIdentity,
+    ) -> Result<RecipientRecord, Error> {
+        let Capsule::KeyServer(capsule) = &record.capsule else {
+            return Err(Error::NotKeyServerRecipient);
+        };
+        let server = self.server(&capsule.keyserver_id)?;
+        let transaction_id = &capsule.transaction_id;
+        if !is_valid_transaction_id(transaction_id) {
+            return Err(Error::InvalidTransactionId(transaction_id.clone()));
+        }
+
+        let url = format!("{}/{transaction_id}", capsules_url(&server.fetch_url));
+        let response = http_client(Some(identity))?.get(url).send()?;
+        let body: Value = response.error_for_status()?.json()?;
+        let recipient_id = decode_field(&body, "recipient_id")?;
+        let sender_public_key = decode_field(&body, "ephemeral_key_material")?;
+        if body["capsule_type"] != capsule_type(capsule.curve)
+            || recipient_id != capsule.recipient_public_key
+        {
+            return Err(Error::InvalidResponse(
+                "the capsule is for another recipient",
+            ));
+        }
+        Ok(record
+            .with_sender_public_key(sender_public_key)
+            .expect("the record has a key server capsule"))
     }
 
     fn server(&self, id: &str) -> Result<&KeyServer, Error> {
@@ -92,11 +157,36 @@ fn capsule_type(curve: EllipticCurve) -> &'static str {
     }
 }
 
-fn transaction_id(location: &str) -> Option<&str> {
-    let (_, id) = location.rsplit_once("/key-capsules/")?;
-    let valid = !id.is_empty()
+fn is_valid_transaction_id(id: &str) -> bool {
+    !id.is_empty()
         && id
             .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
-    valid.then_some(id)
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+fn decode_field(body: &Value, name: &str) -> Result<Vec<u8>, Error> {
+    body[name]
+        .as_str()
+        .and_then(|value| STANDARD.decode(value).ok())
+        .ok_or(Error::InvalidResponse("a field is missing or not base64"))
+}
+
+fn capsules_url(server_url: &str) -> String {
+    format!("{}/key-capsules", server_url.trim_end_matches('/'))
+}
+
+fn http_client(identity: Option<&TlsIdentity>) -> Result<reqwest::blocking::Client, Error> {
+    let builder = ClientConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
+        .with_platform_verifier()?;
+    let config = match identity {
+        Some(identity) => builder.with_client_auth_cert(
+            identity.certificate_chain.clone(),
+            identity.private_key.clone_key(),
+        )?,
+        None => builder.with_no_client_auth(),
+    };
+    let client = reqwest::blocking::Client::builder()
+        .tls_backend_preconfigured(config)
+        .build()?;
+    Ok(client)
 }

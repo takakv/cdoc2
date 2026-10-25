@@ -1,17 +1,13 @@
 use std::thread::{self, JoinHandle};
 
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
-use serde_json::Value;
 use tiny_http::{Header, Response, Server};
 
 use cdoc2::archive::File;
-use cdoc2::capsule::Capsule;
 use cdoc2::capsule::ecc::{EcPublicKey, EcSecretKey};
 use cdoc2::container::Container;
 use cdoc2::decrypt::{DecryptionKey, decrypt};
 use cdoc2::encrypt::Recipient;
-use cdoc2_client::{Client, KeyServer};
+use cdoc2_client::{Client, KeyServer, TlsIdentity};
 
 fn files() -> Vec<File> {
     vec![File {
@@ -20,31 +16,45 @@ fn files() -> Vec<File> {
     }]
 }
 
-// Accepts one capsule upload as transaction KC0123 and returns the uploaded JSON.
-fn fake_server() -> (KeyServer, JoinHandle<Value>) {
+// Stores one uploaded capsule as transaction KC0123 and serves it back once.
+fn fake_server() -> (KeyServer, JoinHandle<()>) {
     let server = Server::http("127.0.0.1:0").unwrap();
     let url = format!("http://{}", server.server_addr().to_ip().unwrap());
-    let upload = thread::spawn(move || {
-        let mut request = server.recv().unwrap();
-        assert_eq!(request.url(), "/key-capsules");
-        let body = serde_json::from_reader(request.as_reader()).unwrap();
+    let handle = thread::spawn(move || {
+        let mut upload = server.recv().unwrap();
+        assert_eq!(upload.url(), "/key-capsules");
+        let mut capsule = String::new();
+        upload.as_reader().read_to_string(&mut capsule).unwrap();
         let location: Header = "Location: /key-capsules/KC0123".parse().unwrap();
-        request
+        upload
             .respond(Response::empty(201).with_header(location))
             .unwrap();
-        body
+
+        let fetch = server.recv().unwrap();
+        assert_eq!(fetch.url(), "/key-capsules/KC0123");
+        fetch.respond(Response::from_string(capsule)).unwrap();
     });
     let server = KeyServer {
         id: "test".into(),
         upload_url: url.clone(),
         fetch_url: url,
     };
-    (server, upload)
+    (server, handle)
+}
+
+fn tls_identity() -> TlsIdentity {
+    let client = rcgen::generate_simple_self_signed(["client".to_owned()]).unwrap();
+    TlsIdentity::new(
+        vec![client.cert.der().to_vec()],
+        client.signing_key.serialize_der(),
+    )
+    .unwrap()
 }
 
 #[test]
-fn uploads_capsules_while_preparing() {
-    let (server, upload) = fake_server();
+fn round_trip() {
+    let (server, server_thread) = fake_server();
+    let client = Client::new(vec![server]);
     let secret_key = p384::SecretKey::from_slice(&[1; 48]).unwrap();
     let public_key = EcPublicKey::P384(secret_key.public_key());
     let recipient = Recipient::KeyServer {
@@ -53,32 +63,19 @@ fn uploads_capsules_while_preparing() {
         keyserver_id: "test",
     };
 
-    let client = Client::new(vec![server]).unwrap();
     let prepared = client.prepare(&[recipient]).unwrap();
     let bytes = prepared.encrypt(&files()).unwrap();
-    let upload = upload.join().unwrap();
-
     let container = Container::parse(&bytes).unwrap();
     let record = &container.head.header.recipients[0];
-    let Capsule::KeyServer(capsule) = &record.capsule else {
-        panic!("expected a key server capsule");
-    };
-    assert_eq!(capsule.transaction_id, "KC0123");
-    assert_eq!(upload["capsule_type"], "ecc_secp384r1");
-    assert_eq!(
-        upload["recipient_id"],
-        STANDARD.encode(&capsule.recipient_public_key)
-    );
+    let fetched = client.fetch(record, &tls_identity()).unwrap();
 
-    // The uploaded ephemeral key is the one that decrypts the container.
-    let ephemeral_key = upload["ephemeral_key_material"].as_str().unwrap();
-    let fetched = record.with_sender_public_key(STANDARD.decode(ephemeral_key).unwrap());
     let key = EcSecretKey::P384(secret_key);
     let decrypted = decrypt(
         &container,
-        &fetched.unwrap(),
+        &fetched,
         &DecryptionKey::EcSecretKey(&key),
         u64::MAX,
     );
     assert_eq!(decrypted, Ok(files()));
+    server_thread.join().unwrap();
 }
