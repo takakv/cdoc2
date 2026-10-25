@@ -5,8 +5,8 @@ use x509_cert::der::asn1::ObjectIdentifier;
 use x509_cert::der::oid::AssociatedOid;
 use x509_cert::der::oid::db::rfc4519;
 use x509_cert::der::{Any, Decode, Encode, Tag, Tagged};
-use x509_cert::ext::pkix::CertificatePolicies;
 use x509_cert::ext::pkix::name::DirectoryString;
+use x509_cert::ext::pkix::{CertificatePolicies, KeyUsage};
 
 use crate::capsule::ecc::EcPublicKey;
 use crate::key_label::{self, CertLabel, EidLabel, EidType};
@@ -23,12 +23,23 @@ pub enum CertificateError {
     Invalid,
     #[error("the certificate has no P-256, P-384 or P-521 public key")]
     UnsupportedKey,
+    #[error("the certificate's key usage does not allow key agreement")]
+    NoKeyAgreement,
 }
 
 /// Reads the EC public key of a DER certificate, with an eID key label for Estonian eID
 /// certificates and a `cert` key label naming `file_name` for others.
 pub fn parse(der: &[u8], file_name: &str) -> Result<CertificateKey, CertificateError> {
     let cert = Certificate::from_der(der).map_err(|_| CertificateError::Invalid)?;
+    let key_usage = cert
+        .tbs_certificate()
+        .get_extension::<KeyUsage>()
+        .map_err(|_| CertificateError::Invalid)?;
+    if let Some((_, key_usage)) = key_usage
+        && !key_usage.key_agreement()
+    {
+        return Err(CertificateError::NoKeyAgreement);
+    }
     let spki = cert
         .tbs_certificate()
         .subject_public_key_info()
