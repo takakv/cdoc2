@@ -5,6 +5,7 @@ mod generated;
 mod fb;
 
 use crate::capsule::Capsule;
+use crate::capsule::ecc::EccPublicKeyCapsule;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Header {
@@ -65,5 +66,19 @@ impl RecipientRecord {
             Capsule::KeyServer(capsule) => capsule.recipient_public_key == public_key,
             Capsule::Symmetric(_) | Capsule::Password(_) | Capsule::Unsupported => false,
         }
+    }
+
+    pub fn with_sender_public_key(&self, sender_public_key: Vec<u8>) -> Option<RecipientRecord> {
+        let Capsule::KeyServer(capsule) = &self.capsule else {
+            return None;
+        };
+        Some(RecipientRecord {
+            capsule: Capsule::Ecc(EccPublicKeyCapsule {
+                curve: capsule.curve,
+                recipient_public_key: capsule.recipient_public_key.clone(),
+                sender_public_key,
+            }),
+            ..self.clone()
+        })
     }
 }

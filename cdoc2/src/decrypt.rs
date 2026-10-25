@@ -14,6 +14,8 @@ use crate::payload::{
 pub enum DecryptError {
     #[error("key type does not match the recipient's capsule type")]
     KeyTypeMismatch,
+    #[error("the recipient's key capsule must first be fetched from its key server")]
+    CapsuleNotFetched,
     #[error("unsupported FMK encryption method")]
     UnsupportedFmkEncryptionMethod,
     #[error("encrypted FMK must be {FMK_LEN} bytes, got {0}")]
@@ -117,6 +119,7 @@ fn derive_kek(
         (Capsule::Ecc(capsule), DecryptionKey::EcdhSharedSecret(shared_secret)) => {
             Ok(capsule.derive_kek_from_shared_secret(shared_secret)?)
         }
+        (Capsule::KeyServer(_), _) => Err(DecryptError::CapsuleNotFetched),
         _ => Err(DecryptError::KeyTypeMismatch),
     }
 }
