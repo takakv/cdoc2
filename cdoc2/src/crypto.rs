@@ -1,5 +1,6 @@
 use hmac::digest::MacError;
 use hmac::{KeyInit, Mac};
+use zeroize::Zeroizing;
 
 pub(crate) const FMK_LEN: usize = 32;
 pub(crate) const KEK_LEN: usize = FMK_LEN;
@@ -19,10 +20,14 @@ pub(crate) fn random_bytes<const N: usize>() -> Result<[u8; N], getrandom::Error
     Ok(bytes)
 }
 
-pub(crate) fn generate_fmk() -> Result<[u8; FMK_LEN], getrandom::Error> {
+// We box it so that moving the FMK only copies a pointer, and we can
+// zeroize the only FMK copy on drop.
+pub(crate) fn generate_fmk() -> Result<Box<Zeroizing<[u8; FMK_LEN]>>, getrandom::Error> {
     let ikm = random_bytes::<FMK_INPUT_LEN>()?;
-    let (fmk, _) = Hkdf::extract(Some(b"CDOC20salt"), &ikm);
-    Ok(fmk.into())
+    let (prk, _) = Hkdf::extract(Some(b"CDOC20salt"), &ikm);
+    let mut fmk = Box::new(Zeroizing::new([0u8; FMK_LEN]));
+    fmk.copy_from_slice(&prk);
+    Ok(fmk)
 }
 
 fn header_mac(fmk: &[u8; FMK_LEN], header_bytes: &[u8]) -> Hmac {
@@ -37,7 +42,7 @@ pub(crate) fn compute_header_hmac(fmk: &[u8; FMK_LEN], header_bytes: &[u8]) -> [
 }
 
 pub(crate) struct AuthenticatedHeader<'a> {
-    fmk: [u8; FMK_LEN],
+    fmk: Zeroizing<[u8; FMK_LEN]>,
     header_bytes: &'a [u8],
     header_hmac: &'a [u8; HMAC_LEN],
 }
@@ -63,7 +68,7 @@ pub(crate) fn authenticate_header<'a>(
 ) -> Result<AuthenticatedHeader<'a>, MacError> {
     header_mac(&fmk, header_bytes).verify_slice(header_hmac)?;
     Ok(AuthenticatedHeader {
-        fmk,
+        fmk: Zeroizing::new(fmk),
         header_bytes,
         header_hmac,
     })

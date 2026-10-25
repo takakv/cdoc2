@@ -1,6 +1,7 @@
 use elliptic_curve::ecdh::{EphemeralSecret, SharedSecret, diffie_hellman};
 use elliptic_curve::sec1::{FromSec1Point, ModulusSize, ToSec1Point};
 use elliptic_curve::{Curve, CurveArithmetic, FieldBytes, Generate, PublicKey, SecretKey};
+use zeroize::Zeroizing;
 
 use crate::capsule::{Capsule, encrypt_fmk, expand_kek};
 use crate::crypto::{FMK_LEN, HashAlgorithm, KEK_LEN};
@@ -104,7 +105,8 @@ impl EccPublicKeyCapsule {
         if key.curve() != self.curve {
             return Err(EccKekError::CurveMismatch);
         }
-        let shared_secret = key.ecdh(&self.sender_key()?).map_err(EccKekError::Ecdh)?;
+        let shared_secret =
+            Zeroizing::new(key.ecdh(&self.sender_key()?).map_err(EccKekError::Ecdh)?);
         self.derive_kek_from_shared_secret(&shared_secret)
     }
 

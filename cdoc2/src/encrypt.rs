@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::io::{self, Read, Write};
 
+use zeroize::Zeroizing;
+
 use crate::IoError;
 use crate::aead_stream::{AeadError, NONCE_LEN};
 use crate::archive::{File, FileEntry, FileNameError, PackError, check_file_names, pack};
@@ -81,7 +83,7 @@ pub enum EncryptError {
 }
 
 pub struct PreparedEncryption {
-    fmk: [u8; FMK_LEN],
+    fmk: Box<Zeroizing<[u8; FMK_LEN]>>,
     records: Vec<PreparedRecord>,
 }
 

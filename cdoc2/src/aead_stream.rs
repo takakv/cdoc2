@@ -20,7 +20,7 @@ pub(crate) enum AeadError {
     TagMismatch,
 }
 
-pub(crate) struct Encryptor(Core);
+pub(crate) struct Encryptor(Box<Core>);
 
 impl Encryptor {
     pub(crate) fn new(key: &[u8; KEY_LEN], nonce: &[u8; NONCE_LEN], aad: &[u8]) -> Self {
@@ -34,12 +34,12 @@ impl Encryptor {
         Ok(())
     }
 
-    pub(crate) fn finalize(self) -> [u8; TAG_LEN] {
+    pub(crate) fn finalize(mut self) -> [u8; TAG_LEN] {
         self.0.finish_mac().finalize().into()
     }
 }
 
-pub(crate) struct Decryptor(Core);
+pub(crate) struct Decryptor(Box<Core>);
 
 impl Decryptor {
     pub(crate) fn new(key: &[u8; KEY_LEN], nonce: &[u8; NONCE_LEN], aad: &[u8]) -> Self {
@@ -53,12 +53,12 @@ impl Decryptor {
         Ok(())
     }
 
-    pub(crate) fn verify(self, tag: &[u8; TAG_LEN]) -> Result<(), AeadError> {
+    pub(crate) fn verify(mut self, tag: &[u8; TAG_LEN]) -> Result<(), AeadError> {
         self.0.verify(tag)
     }
 }
 
-pub(crate) struct Verifier(Core);
+pub(crate) struct Verifier(Box<Core>);
 
 impl Verifier {
     pub(crate) fn new(key: &[u8; KEY_LEN], nonce: &[u8; NONCE_LEN], aad: &[u8]) -> Self {
@@ -71,7 +71,7 @@ impl Verifier {
         Ok(())
     }
 
-    pub(crate) fn verify(self, tag: &[u8; TAG_LEN]) -> Result<(), AeadError> {
+    pub(crate) fn verify(mut self, tag: &[u8; TAG_LEN]) -> Result<(), AeadError> {
         self.0.verify(tag)
     }
 }
@@ -85,7 +85,9 @@ struct Core {
 }
 
 impl Core {
-    fn new(key: &[u8; KEY_LEN], nonce: &[u8; NONCE_LEN], aad: &[u8]) -> Self {
+    // We box it so that moving a Core only copies a pointer. That way the AEAD state
+    // stays in the box, and it gets wiped on drop.
+    fn new(key: &[u8; KEY_LEN], nonce: &[u8; NONCE_LEN], aad: &[u8]) -> Box<Self> {
         let mut cipher = ChaCha20::new(key.into(), nonce.into());
 
         // The Poly1305 key is the start of keystream block 0, and the message uses blocks 1 on.
@@ -95,13 +97,13 @@ impl Core {
         cipher.seek(CHACHA20_BLOCK_LEN);
 
         mac.update_padded(aad);
-        Core {
+        Box::new(Core {
             cipher,
             mac,
             pending: EagerBuffer::default(),
             aad_len: aad.len() as u64,
             message_len: 0,
-        }
+        })
     }
 
     fn reserve(&mut self, len: usize) -> Result<(), AeadError> {
@@ -118,20 +120,22 @@ impl Core {
             .digest_blocks(data, |blocks| self.mac.update(blocks));
     }
 
-    fn verify(self, tag: &[u8; TAG_LEN]) -> Result<(), AeadError> {
+    fn verify(&mut self, tag: &[u8; TAG_LEN]) -> Result<(), AeadError> {
         self.finish_mac()
             .verify(&Block::from(*tag))
             .map_err(|_| AeadError::TagMismatch)
     }
 
-    fn finish_mac(mut self) -> Poly1305 {
+    // We must take `self` by reference to avoid moving Core out of the box.
+    // That way we can wipe the box when freed.
+    fn finish_mac(&mut self) -> Poly1305 {
         self.mac.update_padded(self.pending.get_data());
 
         let mut lengths = Block::default();
         lengths[..8].copy_from_slice(&self.aad_len.to_le_bytes());
         lengths[8..].copy_from_slice(&self.message_len.to_le_bytes());
         self.mac.update(&[lengths]);
-        self.mac
+        self.mac.clone()
     }
 }
 
