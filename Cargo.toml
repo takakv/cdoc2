@@ -7,3 +7,6 @@ edition = "2024"
 license = "Apache-2.0"
 homepage = "https://github.com/takakv/cdoc2"
 repository = "https://github.com/takakv/cdoc2"
+
+[profile.dev.package.sha2]
+opt-level = 3
