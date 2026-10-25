@@ -4,9 +4,8 @@ mod generated;
 
 mod fb;
 
-use crate::capsule::Capsule;
 use crate::capsule::ecc::{EcPublicKey, EccPublicKeyCapsule};
-use crate::crypto::FMK_LEN;
+use crate::capsule::{Capsule, EncryptedFmk};
 use crate::key_label;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,12 +82,12 @@ impl RecipientRecord {
     pub(crate) fn new(
         capsule: Capsule,
         key_label: impl Into<String>,
-        encrypted_fmk: [u8; FMK_LEN],
+        encrypted_fmk: EncryptedFmk,
     ) -> RecipientRecord {
         RecipientRecord {
             capsule,
             key_label: key_label.into(),
-            encrypted_fmk: encrypted_fmk.to_vec(),
+            encrypted_fmk: encrypted_fmk.as_bytes().to_vec(),
             fmk_encryption_method: FmkEncryptionMethod::Xor,
         }
     }

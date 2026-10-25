@@ -1,5 +1,5 @@
 use crate::capsule::ecc::{EcPublicKey, EccPublicKeyCapsule, EllipticCurve};
-use crate::capsule::{Capsule, encrypt_fmk};
+use crate::capsule::{Capsule, EncryptedFmk, encrypt_fmk};
 use crate::crypto::FMK_LEN;
 use crate::header::RecipientRecord;
 use crate::key_label;
@@ -15,7 +15,7 @@ pub struct KeyServerCapsule {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapsuleUpload {
     key_label: String,
-    encrypted_fmk: [u8; FMK_LEN],
+    encrypted_fmk: EncryptedFmk,
     capsule: KeyServerCapsule,
     sender_public_key: Vec<u8>,
     not_after: Option<u64>,

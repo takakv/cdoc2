@@ -22,8 +22,17 @@ pub enum Capsule {
     Unsupported,
 }
 
-pub(crate) fn encrypt_fmk(fmk: &[u8; FMK_LEN], kek: &[u8; FMK_LEN]) -> [u8; FMK_LEN] {
-    xor(fmk, kek)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EncryptedFmk([u8; FMK_LEN]);
+
+impl EncryptedFmk {
+    pub(crate) fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+pub(crate) fn encrypt_fmk(fmk: &[u8; FMK_LEN], kek: &[u8; FMK_LEN]) -> EncryptedFmk {
+    EncryptedFmk(xor(fmk, kek))
 }
 
 pub(crate) fn decrypt_fmk(encrypted_fmk: &[u8; FMK_LEN], kek: &[u8; FMK_LEN]) -> [u8; FMK_LEN] {
