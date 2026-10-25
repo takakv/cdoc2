@@ -89,23 +89,23 @@ pub(crate) fn authenticate<'a>(
     record: &RecipientRecord,
     key: &DecryptionKey,
 ) -> Result<AuthenticatedHeader<'a>, DecryptError> {
-    let kek = derive_kek(head, record, key)?;
+    check_encryption_methods(head, record)?;
     let encrypted_fmk = record
         .encrypted_fmk
         .as_slice()
         .try_into()
         .map_err(|_| DecryptError::InvalidEncryptedFmkLength(record.encrypted_fmk.len()))?;
+
+    let kek = derive_kek(record, key)?;
     let fmk = decrypt_fmk(encrypted_fmk, &kek);
     authenticate_header(fmk, &head.header_bytes, &head.header_hmac)
         .map_err(|_| DecryptError::HmacMismatch)
 }
 
 fn derive_kek(
-    head: &ContainerHead,
     record: &RecipientRecord,
     key: &DecryptionKey,
 ) -> Result<[u8; FMK_LEN], DecryptError> {
-    check_encryption_methods(head, record)?;
     match (&record.capsule, *key) {
         (Capsule::Symmetric(capsule), DecryptionKey::Symmetric(key)) => {
             Ok(capsule.derive_kek(key, &record.key_label))
