@@ -4,10 +4,11 @@ use std::io::{self, Read, Write};
 use crate::aead_stream::{AeadError, NONCE_LEN};
 use crate::archive::{File, FileEntry, FileNameError, PackError, check_file_names, pack};
 use crate::capsule::ecc::{self, EcPublicKey};
+use crate::capsule::key_server::CapsuleUpload;
 use crate::capsule::{password, symmetric};
 use crate::container::encode_head;
-use crate::crypto::{compute_header_hmac, generate_fmk, random_bytes};
-use crate::header::{Header, PayloadEncryptionMethod};
+use crate::crypto::{FMK_LEN, compute_header_hmac, generate_fmk, random_bytes};
+use crate::header::{Header, PayloadEncryptionMethod, RecipientRecord};
 use crate::payload::PayloadWriter;
 
 #[derive(Debug, Clone, Copy)]
@@ -25,6 +26,11 @@ pub enum Recipient<'a> {
         key_label: &'a str,
         public_key: &'a EcPublicKey,
     },
+    KeyServer {
+        key_label: &'a str,
+        public_key: &'a EcPublicKey,
+        keyserver_id: &'a str,
+    },
 }
 
 impl Recipient<'_> {
@@ -32,7 +38,8 @@ impl Recipient<'_> {
         match *self {
             Recipient::Symmetric { key_label, .. }
             | Recipient::Password { key_label, .. }
-            | Recipient::EcPublicKey { key_label, .. } => key_label,
+            | Recipient::EcPublicKey { key_label, .. }
+            | Recipient::KeyServer { key_label, .. } => key_label,
         }
     }
 }
@@ -59,24 +66,22 @@ pub enum EncryptError {
     SizeChanged(String),
     #[error("cannot write container: {0}")]
     Write(String),
+    #[error("the key capsule for {0:?} has not been uploaded")]
+    CapsuleNotUploaded(String),
+}
+
+pub struct PreparedEncryption {
+    fmk: [u8; FMK_LEN],
+    records: Vec<PreparedRecord>,
+}
+
+enum PreparedRecord {
+    Ready(RecipientRecord),
+    Upload(CapsuleUpload),
 }
 
 pub fn encrypt(files: &[File], recipients: &[Recipient]) -> Result<Vec<u8>, EncryptError> {
-    let entries: Vec<_> = files
-        .iter()
-        .map(|file| FileEntry {
-            name: &file.name,
-            size: file.data.len() as u64,
-        })
-        .collect();
-    let mut container = Vec::new();
-    encrypt_into(
-        &entries,
-        |i| Ok(files[i].data.as_slice()),
-        recipients,
-        &mut container,
-    )?;
-    Ok(container)
+    prepare(recipients)?.encrypt(files)
 }
 
 /// Calls `open(i)` once for each file, in order, and expects exactly `files[i].size` bytes from
@@ -85,13 +90,17 @@ pub fn encrypt_into<R: Read>(
     files: &[FileEntry],
     open: impl FnMut(usize) -> io::Result<R>,
     recipients: &[Recipient],
-    mut out: impl Write,
+    out: impl Write,
 ) -> Result<(), EncryptError> {
+    prepare(recipients)?.encrypt_into(files, open, out)
+}
+
+/// Generates the key material for every recipient.
+pub fn prepare(recipients: &[Recipient]) -> Result<PreparedEncryption, EncryptError> {
     if recipients.is_empty() {
         return Err(EncryptError::NoRecipients);
     }
     check_key_labels(recipients)?;
-    check_file_names(files)?;
 
     let fmk = generate_fmk().map_err(random_error)?;
 
@@ -99,41 +108,92 @@ pub fn encrypt_into<R: Read>(
     for r in recipients {
         let record = match *r {
             Recipient::Symmetric { key_label, key } => {
-                symmetric::recipient_record(key, key_label, &fmk)
+                symmetric::recipient_record(key, key_label, &fmk).map(PreparedRecord::Ready)
             }
             Recipient::Password {
                 key_label,
                 password,
-            } => password::recipient_record(password, key_label, &fmk),
+            } => password::recipient_record(password, key_label, &fmk).map(PreparedRecord::Ready),
             Recipient::EcPublicKey {
                 key_label,
                 public_key,
-            } => ecc::recipient_record(public_key, key_label, &fmk),
+            } => ecc::recipient_record(public_key, key_label, &fmk).map(PreparedRecord::Ready),
+            Recipient::KeyServer {
+                key_label,
+                public_key,
+                keyserver_id,
+            } => CapsuleUpload::generate(public_key, key_label, keyserver_id, &fmk)
+                .map(PreparedRecord::Upload),
         };
         records.push(record.map_err(random_error)?);
     }
 
-    let header = Header {
-        recipients: records,
-        payload_encryption_method: PayloadEncryptionMethod::ChaCha20Poly1305,
-    };
-    let header_bytes = header
-        .to_bytes()
-        .expect("headers built for encryption should be serializable");
-    let header_hmac = compute_header_hmac(&fmk, &header_bytes);
+    Ok(PreparedEncryption { fmk, records })
+}
 
-    let head =
-        encode_head(&header_bytes, &header_hmac).map_err(|_| EncryptError::HeaderTooLarge)?;
+impl PreparedEncryption {
+    pub fn capsule_uploads(&mut self) -> impl Iterator<Item = &mut CapsuleUpload> {
+        self.records.iter_mut().filter_map(|record| match record {
+            PreparedRecord::Upload(upload) => Some(upload),
+            PreparedRecord::Ready(_) => None,
+        })
+    }
 
-    let nonce = random_bytes::<NONCE_LEN>().map_err(random_error)?;
-    out.write_all(&head).map_err(write_error)?;
-    let payload =
-        PayloadWriter::new(&fmk, &header_bytes, &header_hmac, &nonce, out).map_err(write_error)?;
-    let payload = pack(files, open, payload).map_err(pack_error)?;
-    payload
-        .finish()
-        .and_then(|mut out| out.flush())
-        .map_err(write_error)
+    pub fn encrypt(self, files: &[File]) -> Result<Vec<u8>, EncryptError> {
+        let entries: Vec<_> = files
+            .iter()
+            .map(|file| FileEntry {
+                name: &file.name,
+                size: file.data.len() as u64,
+            })
+            .collect();
+        let mut container = Vec::new();
+        self.encrypt_into(&entries, |i| Ok(files[i].data.as_slice()), &mut container)?;
+        Ok(container)
+    }
+
+    pub fn encrypt_into<R: Read>(
+        self,
+        files: &[FileEntry],
+        open: impl FnMut(usize) -> io::Result<R>,
+        mut out: impl Write,
+    ) -> Result<(), EncryptError> {
+        check_file_names(files)?;
+
+        let recipients = self
+            .records
+            .into_iter()
+            .map(|record| match record {
+                PreparedRecord::Ready(record) => Ok(record),
+                PreparedRecord::Upload(upload) if upload.is_uploaded() => Ok(upload.into_record()),
+                PreparedRecord::Upload(upload) => Err(EncryptError::CapsuleNotUploaded(
+                    upload.key_label().to_owned(),
+                )),
+            })
+            .collect::<Result<_, _>>()?;
+
+        let header = Header {
+            recipients,
+            payload_encryption_method: PayloadEncryptionMethod::ChaCha20Poly1305,
+        };
+        let header_bytes = header
+            .to_bytes()
+            .expect("headers built for encryption should be serializable");
+        let header_hmac = compute_header_hmac(&self.fmk, &header_bytes);
+
+        let head =
+            encode_head(&header_bytes, &header_hmac).map_err(|_| EncryptError::HeaderTooLarge)?;
+
+        let nonce = random_bytes::<NONCE_LEN>().map_err(random_error)?;
+        out.write_all(&head).map_err(write_error)?;
+        let payload = PayloadWriter::new(&self.fmk, &header_bytes, &header_hmac, &nonce, out)
+            .map_err(write_error)?;
+        let payload = pack(files, open, payload).map_err(pack_error)?;
+        payload
+            .finish()
+            .and_then(|mut out| out.flush())
+            .map_err(write_error)
+    }
 }
 
 fn random_error(e: getrandom::Error) -> EncryptError {
