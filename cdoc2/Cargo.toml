@@ -14,6 +14,7 @@ repository.workspace = true
 base64 = "0.23.1"
 block-buffer = "0.12.1"
 chacha20 = { version = "0.10.2", default-features = false, features = ["cipher"] }
+derive_more = { version = "2.1.1", default-features = false, features = ["debug"] }
 elliptic-curve = { version = "0.14.1", default-features = false, features = ["ecdh", "getrandom", "sec1"] }
 flatbuffers = "25.12.19"
 flate2 = "1.1.10"

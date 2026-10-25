@@ -11,15 +11,17 @@ use crate::crypto::{FMK_LEN, compute_header_hmac, generate_fmk, random_bytes};
 use crate::header::{Header, PayloadEncryptionMethod, RecipientRecord};
 use crate::payload::PayloadWriter;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(derive_more::Debug, Clone, Copy)]
 #[non_exhaustive]
 pub enum Recipient<'a> {
     Symmetric {
         key_label: &'a str,
+        #[debug("[redacted]")]
         key: &'a [u8],
     },
     Password {
         key_label: &'a str,
+        #[debug("[redacted]")]
         password: &'a str,
     },
     EcPublicKey {
