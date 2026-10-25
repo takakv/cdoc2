@@ -173,3 +173,22 @@ fn oversized_file_never_reaches_the_sink() {
         .collect();
     assert_eq!(names, ["a.txt"]);
 }
+
+#[test]
+fn too_short() {
+    let container = encrypt_files(&files());
+    let mut reader = container.as_slice();
+    ContainerHead::read(&mut reader).unwrap();
+    let head_len = container.len() - reader.len();
+
+    // A nonce (12 bytes) and a tag (16 bytes) with no ciphertext between them.
+    for payload_len in 0..28 {
+        let (result, decrypted) = decrypt_files(&container[..head_len + payload_len]);
+        assert_eq!(
+            result,
+            Err(DecryptError::Payload(PayloadError::TooShort)),
+            "payload length {payload_len}"
+        );
+        assert!(decrypted.is_empty());
+    }
+}

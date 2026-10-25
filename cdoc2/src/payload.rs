@@ -1,4 +1,4 @@
-use std::io::{self, Read, Seek, SeekFrom, Take, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 
 use crate::aead_stream::{AeadError, Decryptor, Encryptor, NONCE_LEN, TAG_LEN, Verifier};
 use crate::crypto::{AuthenticatedHeader, FMK_LEN, HMAC_LEN, derive_cek};
@@ -80,32 +80,64 @@ impl<W: Write> Write for PayloadWriter<W> {
 
 const READ_SIZE: usize = 64 * 1024;
 
-pub(crate) struct PayloadReader<R> {
-    ciphertext: Take<R>,
-    decryptor: Decryptor,
-    tag: [u8; TAG_LEN],
+struct CiphertextReader<R> {
+    inner: R,
+    held: Vec<u8>,
 }
 
-impl<R: Read + Seek> PayloadReader<R> {
-    pub(crate) fn new(header: &AuthenticatedHeader, mut payload: R) -> Result<Self, PayloadError> {
-        let (nonce, ciphertext_len, tag) = read_nonce_and_tag(&mut payload)?;
-        Ok(PayloadReader {
-            ciphertext: payload.take(ciphertext_len),
-            decryptor: Decryptor::new(&derive_cek(header.fmk()), &nonce, &header_aad(header)),
-            tag,
-        })
+impl<R: Read> CiphertextReader<R> {
+    fn new(mut inner: R) -> Result<([u8; NONCE_LEN], Self), PayloadError> {
+        let nonce = read_array(&mut inner)?;
+        let held = Vec::with_capacity(READ_SIZE + TAG_LEN);
+        Ok((nonce, CiphertextReader { inner, held }))
     }
+
+    fn read(&mut self, out: &mut [u8]) -> Result<usize, PayloadError> {
+        let wanted = out.len() + TAG_LEN;
+        if self.held.len() < wanted {
+            let start = self.held.len();
+            self.held.resize(wanted, 0);
+            let n = fill(&mut self.inner, &mut self.held[start..])?;
+            self.held.truncate(start + n);
+        }
+        let n = self.held.len().saturating_sub(TAG_LEN).min(out.len());
+        out[..n].copy_from_slice(&self.held[..n]);
+        self.held.drain(..n);
+        Ok(n)
+    }
+
+    // Only valid once `read` has returned 0.
+    fn tag(self) -> Result<[u8; TAG_LEN], PayloadError> {
+        self.held
+            .as_slice()
+            .try_into()
+            .map_err(|_| PayloadError::TooShort)
+    }
+}
+
+pub(crate) struct PayloadReader<R> {
+    ciphertext: CiphertextReader<R>,
+    decryptor: Decryptor,
 }
 
 impl<R: Read> PayloadReader<R> {
+    pub(crate) fn new(header: &AuthenticatedHeader, payload: R) -> Result<Self, PayloadError> {
+        let (nonce, ciphertext) = CiphertextReader::new(payload)?;
+        Ok(PayloadReader {
+            ciphertext,
+            decryptor: Decryptor::new(&derive_cek(header.fmk()), &nonce, &header_aad(header)),
+        })
+    }
+
     pub(crate) fn finish(mut self) -> Result<(), PayloadError> {
         let mut buf = vec![0; READ_SIZE];
         while self.read_payload(&mut buf)? > 0 {}
-        self.decryptor.verify(&self.tag).map_err(decryption_failed)
+        let tag = self.ciphertext.tag()?;
+        self.decryptor.verify(&tag).map_err(decryption_failed)
     }
 
     fn read_payload(&mut self, out: &mut [u8]) -> Result<usize, PayloadError> {
-        let n = fill(&mut self.ciphertext, out)?;
+        let n = self.ciphertext.read(out)?;
         self.decryptor
             .decrypt(&mut out[..n])
             .map_err(decryption_failed)?;
@@ -124,42 +156,19 @@ pub(crate) fn verify_payload(
     payload: &mut (impl Read + Seek),
 ) -> Result<(), PayloadError> {
     let start = payload.stream_position().map_err(read_error)?;
-    let (nonce, ciphertext_len, tag) = read_nonce_and_tag(payload)?;
+    let (nonce, mut ciphertext) = CiphertextReader::new(payload.by_ref())?;
 
     let mut verifier = Verifier::new(&derive_cek(header.fmk()), &nonce, &header_aad(header));
-    let mut ciphertext = payload.by_ref().take(ciphertext_len);
     let mut buf = vec![0; READ_SIZE];
-    while let n @ 1.. = fill(&mut ciphertext, &mut buf)? {
+    while let n @ 1.. = ciphertext.read(&mut buf)? {
         verifier.update(&buf[..n]).map_err(decryption_failed)?;
     }
-    verifier.verify(&tag).map_err(decryption_failed)?;
+    verifier
+        .verify(&ciphertext.tag()?)
+        .map_err(decryption_failed)?;
 
     payload.seek(SeekFrom::Start(start)).map_err(read_error)?;
     Ok(())
-}
-
-// Leaves `payload` at the start of the ciphertext.
-fn read_nonce_and_tag(
-    payload: &mut (impl Read + Seek),
-) -> Result<([u8; NONCE_LEN], u64, [u8; TAG_LEN]), PayloadError> {
-    let start = payload.stream_position().map_err(read_error)?;
-    let end = payload.seek(SeekFrom::End(0)).map_err(read_error)?;
-    let ciphertext_len = end
-        .saturating_sub(start)
-        .checked_sub((NONCE_LEN + TAG_LEN) as u64)
-        .ok_or(PayloadError::TooShort)?;
-    let ciphertext_start = start + NONCE_LEN as u64;
-
-    payload.seek(SeekFrom::Start(start)).map_err(read_error)?;
-    let nonce = read_array(payload)?;
-    payload
-        .seek(SeekFrom::Start(ciphertext_start + ciphertext_len))
-        .map_err(read_error)?;
-    let tag = read_array(payload)?;
-    payload
-        .seek(SeekFrom::Start(ciphertext_start))
-        .map_err(read_error)?;
-    Ok((nonce, ciphertext_len, tag))
 }
 
 fn header_aad(header: &AuthenticatedHeader) -> Vec<u8> {

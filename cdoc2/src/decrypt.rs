@@ -72,7 +72,7 @@ pub fn decrypt_into(
 
 pub(crate) fn decrypt_payload(
     header: &AuthenticatedHeader,
-    payload: impl Read + Seek,
+    payload: impl Read,
     max_size: u64,
     sink: &mut impl Sink,
 ) -> Result<(), DecryptError> {
