@@ -1,7 +1,7 @@
 use pbkdf2::pbkdf2_hmac_array;
 
 use crate::capsule::{Capsule, SALT_LEN, derive_symmetric_kek, encrypt_fmk};
-use crate::crypto::{FMK_LEN, KEK_LEN, random_bytes};
+use crate::crypto::{FMK_LEN, Kek, random_bytes};
 use crate::header::RecipientRecord;
 
 pub(crate) const KDF_ITERATIONS: u32 = 600_000;
@@ -26,7 +26,7 @@ impl Pbkdf2Capsule {
         })
     }
 
-    pub(crate) fn derive_kek(&self, password: &str, key_label: &str) -> [u8; KEK_LEN] {
+    pub(crate) fn derive_kek(&self, password: &str, key_label: &str) -> Kek {
         let ikm = pbkdf2_hmac_array::<Pbkdf2Hash, PASSWORD_KEY_LEN>(
             password.as_bytes(),
             &self.password_salt,

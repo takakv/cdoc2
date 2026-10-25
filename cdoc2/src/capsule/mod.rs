@@ -3,12 +3,14 @@ pub mod key_server;
 pub mod password;
 pub mod symmetric;
 
+use zeroize::Zeroizing;
+
 use ecc::EccPublicKeyCapsule;
 use key_server::KeyServerCapsule;
 use password::Pbkdf2Capsule;
 use symmetric::SymmetricKeyCapsule;
 
-use crate::crypto::{FMK_LEN, Hkdf, KEK_LEN};
+use crate::crypto::{FMK_LEN, Hkdf, KEK_LEN, Kek};
 
 const ALG_ID: &str = "XOR";
 pub(crate) const SALT_LEN: usize = 32;
@@ -52,19 +54,22 @@ pub(crate) fn encrypt_fmk(fmk: &[u8; FMK_LEN], kek: &[u8; KEK_LEN]) -> Encrypted
     EncryptedFmk(xor(fmk, kek))
 }
 
-pub(crate) fn decrypt_fmk(encrypted_fmk: &[u8; FMK_LEN], kek: &[u8; KEK_LEN]) -> [u8; FMK_LEN] {
-    xor(encrypted_fmk, kek)
+pub(crate) fn decrypt_fmk(
+    encrypted_fmk: &[u8; FMK_LEN],
+    kek: &[u8; KEK_LEN],
+) -> Zeroizing<[u8; FMK_LEN]> {
+    Zeroizing::new(xor(encrypted_fmk, kek))
 }
 
-pub(crate) fn expand_kek(hk: &Hkdf, context: &[&[u8]]) -> [u8; KEK_LEN] {
+pub(crate) fn expand_kek(hk: &Hkdf, context: &[&[u8]]) -> Kek {
     let info = [&[b"CDOC20kek", ALG_ID.as_bytes()], context].concat();
-    let mut kek = [0u8; KEK_LEN];
-    hk.expand_multi_info(&info, &mut kek)
+    let mut kek = Kek::default();
+    hk.expand_multi_info(&info, &mut kek[..])
         .expect("KEK_LEN is a valid HKDF-Expand output length");
     kek
 }
 
-pub(crate) fn derive_symmetric_kek(salt: &[u8], key: &[u8], key_label: &str) -> [u8; KEK_LEN] {
+pub(crate) fn derive_symmetric_kek(salt: &[u8], key: &[u8], key_label: &str) -> Kek {
     let hk = Hkdf::new(Some(salt), key);
     expand_kek(&hk, &[key_label.as_bytes()])
 }

@@ -4,7 +4,7 @@ use crate::archive::{self, File, Sink, UnpackError};
 use crate::capsule::ecc::EccKekError;
 use crate::capsule::{Capsule, decrypt_fmk};
 use crate::container::{Container, ContainerHead};
-use crate::crypto::{AuthenticatedHeader, FMK_LEN, KEK_LEN, authenticate_header};
+use crate::crypto::{AuthenticatedHeader, FMK_LEN, Kek, authenticate_header};
 use crate::header::{FmkEncryptionMethod, RecipientRecord};
 use crate::keys::{EcSecretKey, EcdhKey};
 use crate::payload::{
@@ -129,7 +129,7 @@ fn derive_kek(
     record: &RecipientRecord,
     key: &DecryptionKey,
     options: DecryptOptions,
-) -> Result<[u8; KEK_LEN], DecryptError> {
+) -> Result<Kek, DecryptError> {
     match (&record.capsule, *key) {
         (Capsule::Symmetric(capsule), DecryptionKey::Symmetric(key)) => {
             Ok(capsule.derive_kek(key, &record.key_label))

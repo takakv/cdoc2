@@ -10,6 +10,9 @@ pub(crate) type HashAlgorithm = sha2::Sha256;
 pub(crate) type Hkdf = hkdf::Hkdf<HashAlgorithm>;
 pub(crate) type Hmac = hmac::Hmac<HashAlgorithm>;
 
+// We must box the KEK so that the instance is not duplicated, and it gets wiped on drop.
+pub(crate) type Kek = Box<Zeroizing<[u8; KEK_LEN]>>;
+
 const FMK_INPUT_LEN: usize = 32;
 const HHK_LEN: usize = 32;
 const CEK_LEN: usize = 32;
@@ -62,13 +65,13 @@ impl<'a> AuthenticatedHeader<'a> {
 }
 
 pub(crate) fn authenticate_header<'a>(
-    fmk: [u8; FMK_LEN],
+    fmk: Zeroizing<[u8; FMK_LEN]>,
     header_bytes: &'a [u8],
     header_hmac: &'a [u8; HMAC_LEN],
 ) -> Result<AuthenticatedHeader<'a>, MacError> {
     header_mac(&fmk, header_bytes).verify_slice(header_hmac)?;
     Ok(AuthenticatedHeader {
-        fmk: Zeroizing::new(fmk),
+        fmk,
         header_bytes,
         header_hmac,
     })
