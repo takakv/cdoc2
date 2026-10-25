@@ -105,12 +105,13 @@ fn read_error() {
     struct Failing;
     impl io::Read for Failing {
         fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
-            Err(io::Error::other("disk on fire"))
+            Err(io::Error::new(io::ErrorKind::PermissionDenied, "no access"))
         }
     }
 
-    assert_eq!(
-        ContainerHead::read(&mut Failing).unwrap_err(),
-        ContainerError::Read("disk on fire".into())
-    );
+    let ContainerError::Read(error) = ContainerHead::read(&mut Failing).unwrap_err() else {
+        panic!("expected a read error");
+    };
+    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    assert_eq!(error.to_string(), "no access");
 }

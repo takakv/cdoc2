@@ -169,7 +169,7 @@ fn malformed(e: io::Error) -> UnpackError {
 }
 
 fn write_error(e: io::Error) -> UnpackError {
-    UnpackError::Write(e.to_string())
+    UnpackError::Write(e.into())
 }
 
 fn trailing_data() -> UnpackError {

@@ -1,5 +1,7 @@
 use std::io;
 
+use crate::IoError;
+
 mod names;
 mod pack;
 mod unpack;
@@ -66,7 +68,7 @@ pub enum UnpackError {
     #[error(transparent)]
     FileName(#[from] FileNameError),
     #[error("cannot write unpacked file: {0}")]
-    Write(String),
+    Write(IoError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

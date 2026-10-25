@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::io::{self, Read, Write};
 
+use crate::IoError;
 use crate::aead_stream::{AeadError, NONCE_LEN};
 use crate::archive::{File, FileEntry, FileNameError, PackError, check_file_names, pack};
 use crate::capsule::ecc::{self, EcPublicKey};
@@ -68,12 +69,12 @@ pub enum EncryptError {
     PayloadTooLarge,
     #[error("could not generate random bytes: {0}")]
     Random(String),
-    #[error("cannot read {name:?}: {message}")]
-    Read { name: String, message: String },
+    #[error("cannot read {name:?}: {error}")]
+    Read { name: String, error: IoError },
     #[error("{0:?} changed size while being read")]
     SizeChanged(String),
     #[error("cannot write container: {0}")]
-    Write(String),
+    Write(IoError),
     #[error("the key capsule for {0:?} has not been uploaded")]
     CapsuleNotUploaded(String),
 }
@@ -205,7 +206,7 @@ fn pack_error(e: PackError) -> EncryptError {
     match e {
         PackError::Read { name, error } => EncryptError::Read {
             name,
-            message: error.to_string(),
+            error: error.into(),
         },
         PackError::SizeChanged(name) => EncryptError::SizeChanged(name),
         PackError::Write(error) => write_error(error),
@@ -216,7 +217,7 @@ fn write_error(e: io::Error) -> EncryptError {
     if e.get_ref().is_some_and(|e| e.is::<AeadError>()) {
         EncryptError::PayloadTooLarge
     } else {
-        EncryptError::Write(e.to_string())
+        EncryptError::Write(e.into())
     }
 }
 

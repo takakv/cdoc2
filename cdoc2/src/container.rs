@@ -1,5 +1,6 @@
 use std::io::{self, Read};
 
+use crate::IoError;
 use crate::crypto::HMAC_LEN;
 use crate::header::{Header, HeaderError};
 
@@ -31,7 +32,7 @@ pub enum ContainerError {
     #[error("container is truncated")]
     Truncated,
     #[error("cannot read container: {0}")]
-    Read(String),
+    Read(IoError),
     #[error(transparent)]
     Header(#[from] HeaderError),
 }
@@ -90,7 +91,7 @@ fn read_error(e: io::Error) -> ContainerError {
     if e.kind() == io::ErrorKind::UnexpectedEof {
         ContainerError::Truncated
     } else {
-        ContainerError::Read(e.to_string())
+        ContainerError::Read(e.into())
     }
 }
 

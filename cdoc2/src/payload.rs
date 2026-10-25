@@ -1,5 +1,6 @@
 use std::io::{self, Read, Seek, SeekFrom, Write};
 
+use crate::IoError;
 use crate::aead_stream::{AeadError, Decryptor, Encryptor, NONCE_LEN, TAG_LEN, Verifier};
 use crate::crypto::{AuthenticatedHeader, FMK_LEN, HMAC_LEN, derive_cek};
 use crate::header::{Header, PayloadEncryptionMethod};
@@ -13,7 +14,7 @@ pub enum PayloadError {
     #[error("payload decryption failed: corrupted or tampered payload")]
     DecryptionFailed,
     #[error("cannot read payload: {0}")]
-    Read(String),
+    Read(IoError),
 }
 
 pub(crate) fn check_payload_encryption_method(header: &Header) -> Result<(), PayloadError> {
@@ -198,7 +199,7 @@ fn read_error(e: io::Error) -> PayloadError {
     if e.kind() == io::ErrorKind::UnexpectedEof {
         PayloadError::TooShort
     } else {
-        PayloadError::Read(e.to_string())
+        PayloadError::Read(e.into())
     }
 }
 

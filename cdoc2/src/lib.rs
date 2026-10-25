@@ -12,5 +12,8 @@ pub mod encrypt;
 #[cfg(feature = "hazmat")]
 pub mod hazmat;
 pub mod header;
+mod io_error;
 pub mod key_label;
 pub mod payload;
+
+pub use io_error::IoError;
