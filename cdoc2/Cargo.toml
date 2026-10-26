@@ -14,6 +14,8 @@ repository.workspace = true
 base64 = "0.23.1"
 block-buffer = "0.12.1"
 chacha20 = { version = "0.10.2", default-features = false, features = ["cipher", "zeroize"] }
+# NB! ChaCha20 does not wipe its keystream buffer without this import.
+cipher = { version = "0.5.2", default-features = false, features = ["zeroize"] }
 derive_more = { version = "2.1.1", default-features = false, features = ["debug"] }
 elliptic-curve = { version = "0.14.1", default-features = false, features = ["ecdh", "getrandom", "sec1"] }
 flatbuffers = "25.12.19"
@@ -28,7 +30,7 @@ p521 = { version = "0.14.0", default-features = false, features = ["ecdh"] }
 pbkdf2 = "0.13.0"
 poly1305 = { version = "0.9.1", features = ["zeroize"] }
 sha1 = { version = "0.11.0", optional = true }
-sha2 = "0.11.1"
+sha2 = { version = "0.11.1", features = ["zeroize"] }
 tar = { version = "0.4.46", default-features = false }
 thiserror = "2.0.21"
 zeroize = { version = "1.8.1", default-features = false, features = ["alloc"] }

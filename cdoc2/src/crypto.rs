@@ -1,6 +1,6 @@
 use hmac::digest::MacError;
 use hmac::{KeyInit, Mac};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 pub(crate) const FMK_LEN: usize = 32;
 pub(crate) const KEK_LEN: usize = FMK_LEN;
@@ -13,9 +13,25 @@ pub(crate) type Hmac = hmac::Hmac<HashAlgorithm>;
 // We must box the KEK so that the instance is not duplicated, and it gets wiped on drop.
 pub(crate) type Kek = Box<Zeroizing<[u8; KEK_LEN]>>;
 
+// Fails to build if Cargo.toml loses necessary zeroize features.
+// Inspired by RustCrypto.
+// https://github.com/RustCrypto/traits/blob/8fffd5b1e6c5b9272b18efa967c55a8bd78d0d9b/cipher/src/stream/wrapper.rs#L223
+const _: () = {
+    fn wiped_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+    let _ = wiped_on_drop::<chacha20::ChaCha20>;
+    let _ = wiped_on_drop::<HashAlgorithm>;
+};
+
 const FMK_INPUT_LEN: usize = 32;
+const WIPED_STACK_LEN: usize = 16 * 1024;
 const HHK_LEN: usize = 32;
 const CEK_LEN: usize = 32;
+
+#[inline(never)]
+pub(crate) fn wipe_stack() {
+    let mut area = [0u8; WIPED_STACK_LEN];
+    area.zeroize();
+}
 
 pub(crate) fn random_bytes<const N: usize>() -> Result<[u8; N], getrandom::Error> {
     let mut bytes = [0u8; N];

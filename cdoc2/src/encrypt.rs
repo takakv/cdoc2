@@ -10,7 +10,7 @@ use crate::capsule::ecc;
 use crate::capsule::key_server::CapsuleUpload;
 use crate::capsule::{password, symmetric};
 use crate::container::encode_head;
-use crate::crypto::{FMK_LEN, compute_header_hmac, generate_fmk, random_bytes};
+use crate::crypto::{FMK_LEN, compute_header_hmac, generate_fmk, random_bytes, wipe_stack};
 use crate::header::{Header, PayloadEncryptionMethod, RecipientRecord};
 use crate::keys::EcPublicKey;
 use crate::payload::PayloadWriter;
@@ -109,6 +109,13 @@ pub fn encrypt_into<R: Read>(
 
 /// Generates the key material for every recipient.
 pub fn prepare(recipients: &[Recipient]) -> Result<PreparedEncryption, EncryptError> {
+    let result = prepare_keys(recipients);
+    wipe_stack();
+    result
+}
+
+#[inline(never)]
+fn prepare_keys(recipients: &[Recipient]) -> Result<PreparedEncryption, EncryptError> {
     if recipients.is_empty() {
         return Err(EncryptError::NoRecipients);
     }
@@ -160,6 +167,18 @@ impl PreparedEncryption {
     }
 
     pub fn encrypt_into<R: Read>(
+        self,
+        files: &[FileEntry],
+        open: impl FnMut(usize) -> io::Result<R>,
+        out: impl Write,
+    ) -> Result<(), EncryptError> {
+        let result = self.encrypt_with_keys(files, open, out);
+        wipe_stack();
+        result
+    }
+
+    #[inline(never)]
+    fn encrypt_with_keys<R: Read>(
         self,
         files: &[FileEntry],
         open: impl FnMut(usize) -> io::Result<R>,

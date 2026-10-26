@@ -4,6 +4,7 @@ use std::io::Read;
 
 use crate::archive::Sink;
 use crate::container::ContainerHead;
+use crate::crypto::wipe_stack;
 use crate::decrypt::{DecryptError, DecryptOptions, DecryptionKey, authenticate, decrypt_payload};
 use crate::header::RecipientRecord;
 
@@ -11,6 +12,20 @@ use crate::header::RecipientRecord;
 /// the tag at the end, so `payload` can be a pipe or a network stream. The sink receives the
 /// files before they are authenticated, so its contents may be forged unless this returns `Ok`.
 pub fn decrypt_into_unverified(
+    head: &ContainerHead,
+    record: &RecipientRecord,
+    key: &DecryptionKey,
+    payload: impl Read,
+    options: DecryptOptions,
+    sink: &mut impl Sink,
+) -> Result<(), DecryptError> {
+    let result = decrypt_with_keys(head, record, key, payload, options, sink);
+    wipe_stack();
+    result
+}
+
+#[inline(never)]
+fn decrypt_with_keys(
     head: &ContainerHead,
     record: &RecipientRecord,
     key: &DecryptionKey,
