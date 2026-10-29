@@ -27,8 +27,22 @@ const WIPED_STACK_LEN: usize = 16 * 1024;
 const HHK_LEN: usize = 32;
 const CEK_LEN: usize = 32;
 
-pub(crate) fn wipe_stack() {
-    zeroize::zeroize_stack::<WIPED_STACK_LEN>();
+pub(crate) fn with_wiped_stack<R>(f: impl FnOnce() -> R) -> R {
+    let _wipe = WipeStackOnDrop;
+    run_below(f)
+}
+
+#[inline(never)]
+fn run_below<R>(f: impl FnOnce() -> R) -> R {
+    f()
+}
+
+struct WipeStackOnDrop;
+
+impl Drop for WipeStackOnDrop {
+    fn drop(&mut self) {
+        zeroize::zeroize_stack::<WIPED_STACK_LEN>();
+    }
 }
 
 pub(crate) fn random_bytes<const N: usize>() -> Result<[u8; N], getrandom::Error> {

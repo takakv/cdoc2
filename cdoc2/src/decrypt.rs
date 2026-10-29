@@ -4,7 +4,7 @@ use crate::archive::{self, File, Sink, UnpackError};
 use crate::capsule::ecc::EccKekError;
 use crate::capsule::{Capsule, decrypt_fmk};
 use crate::container::{Container, ContainerHead};
-use crate::crypto::{AuthenticatedHeader, FMK_LEN, Kek, authenticate_header, wipe_stack};
+use crate::crypto::{AuthenticatedHeader, FMK_LEN, Kek, authenticate_header, with_wiped_stack};
 use crate::header::{FmkEncryptionMethod, RecipientRecord};
 use crate::keys::{EcSecretKey, EcdhKey};
 use crate::payload::{
@@ -87,12 +87,9 @@ pub fn decrypt_into(
     options: DecryptOptions,
     sink: &mut impl Sink,
 ) -> Result<(), DecryptError> {
-    let result = decrypt_with_keys(head, record, key, payload, options, sink);
-    wipe_stack();
-    result
+    with_wiped_stack(|| decrypt_with_keys(head, record, key, payload, options, sink))
 }
 
-#[inline(never)]
 fn decrypt_with_keys(
     head: &ContainerHead,
     record: &RecipientRecord,
