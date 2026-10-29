@@ -1,6 +1,6 @@
 use hmac::digest::MacError;
 use hmac::{KeyInit, Mac};
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 pub(crate) const FMK_LEN: usize = 32;
 pub(crate) const KEK_LEN: usize = FMK_LEN;
@@ -27,10 +27,8 @@ const WIPED_STACK_LEN: usize = 16 * 1024;
 const HHK_LEN: usize = 32;
 const CEK_LEN: usize = 32;
 
-#[inline(never)]
 pub(crate) fn wipe_stack() {
-    let mut area = [0u8; WIPED_STACK_LEN];
-    area.zeroize();
+    zeroize::zeroize_stack::<WIPED_STACK_LEN>();
 }
 
 pub(crate) fn random_bytes<const N: usize>() -> Result<[u8; N], getrandom::Error> {
