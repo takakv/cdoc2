@@ -1,8 +1,6 @@
 use std::collections::HashSet;
 use std::io::{self, Read, Write};
 
-use zeroize::Zeroizing;
-
 use crate::IoError;
 use crate::aead_stream::{AeadError, NONCE_LEN};
 use crate::archive::{File, FileEntry, FileNameError, PackError, check_file_names, pack};
@@ -10,7 +8,7 @@ use crate::capsule::ecc;
 use crate::capsule::key_server::CapsuleUpload;
 use crate::capsule::{password, symmetric};
 use crate::container::encode_head;
-use crate::crypto::{FMK_LEN, compute_header_hmac, generate_fmk, random_bytes, with_wiped_stack};
+use crate::crypto::{Fmk, compute_header_hmac, generate_fmk, random_bytes, with_wiped_stack};
 use crate::header::{Header, PayloadEncryptionMethod, RecipientRecord};
 use crate::keys::EcPublicKey;
 use crate::payload::PayloadWriter;
@@ -83,7 +81,7 @@ pub enum EncryptError {
 }
 
 pub struct PreparedEncryption {
-    fmk: Box<Zeroizing<[u8; FMK_LEN]>>,
+    fmk: Fmk,
     records: Vec<PreparedRecord>,
 }
 

@@ -10,7 +10,8 @@ pub(crate) type HashAlgorithm = sha2::Sha256;
 pub(crate) type Hkdf = hkdf::Hkdf<HashAlgorithm>;
 pub(crate) type Hmac = hmac::Hmac<HashAlgorithm>;
 
-// We must box the KEK so that the instance is not duplicated, and it gets wiped on drop.
+// We must box them so that the instances are not duplicated, and they get wiped on drop.
+pub(crate) type Fmk = Box<Zeroizing<[u8; FMK_LEN]>>;
 pub(crate) type Kek = Box<Zeroizing<[u8; KEK_LEN]>>;
 
 // Fails to build if Cargo.toml loses necessary zeroize features.
@@ -51,12 +52,10 @@ pub(crate) fn random_bytes<const N: usize>() -> Result<[u8; N], getrandom::Error
     Ok(bytes)
 }
 
-// We box it so that moving the FMK only copies a pointer, and we can
-// zeroize the only FMK copy on drop.
-pub(crate) fn generate_fmk() -> Result<Box<Zeroizing<[u8; FMK_LEN]>>, getrandom::Error> {
+pub(crate) fn generate_fmk() -> Result<Fmk, getrandom::Error> {
     let ikm = random_bytes::<FMK_INPUT_LEN>()?;
     let (prk, _) = Hkdf::extract(Some(b"CDOC20salt"), &ikm);
-    let mut fmk = Box::new(Zeroizing::new([0u8; FMK_LEN]));
+    let mut fmk = Fmk::default();
     fmk.copy_from_slice(&prk);
     Ok(fmk)
 }
@@ -73,7 +72,7 @@ pub(crate) fn compute_header_hmac(fmk: &[u8; FMK_LEN], header_bytes: &[u8]) -> [
 }
 
 pub(crate) struct AuthenticatedHeader<'a> {
-    fmk: Zeroizing<[u8; FMK_LEN]>,
+    fmk: Fmk,
     header_bytes: &'a [u8],
     header_hmac: &'a [u8; HMAC_LEN],
 }
@@ -93,7 +92,7 @@ impl<'a> AuthenticatedHeader<'a> {
 }
 
 pub(crate) fn authenticate_header<'a>(
-    fmk: Zeroizing<[u8; FMK_LEN]>,
+    fmk: Fmk,
     header_bytes: &'a [u8],
     header_hmac: &'a [u8; HMAC_LEN],
 ) -> Result<AuthenticatedHeader<'a>, MacError> {
