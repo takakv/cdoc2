@@ -1,5 +1,7 @@
 use elliptic_curve::sec1::ToSec1Point;
 
+use crate::crypto::with_wiped_stack;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EllipticCurve {
     Secp256r1,
@@ -29,11 +31,11 @@ pub enum EcPublicKey {
 
 impl EcSecretKey {
     pub fn public_key(&self) -> EcPublicKey {
-        match self {
+        with_wiped_stack(|| match self {
             EcSecretKey::P256(key) => EcPublicKey::P256(key.public_key()),
             EcSecretKey::P384(key) => EcPublicKey::P384(key.public_key()),
             EcSecretKey::P521(key) => EcPublicKey::P521(key.public_key()),
-        }
+        })
     }
 }
 
