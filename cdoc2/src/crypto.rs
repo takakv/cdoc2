@@ -23,7 +23,7 @@ const _: () = {
 };
 
 const FMK_INPUT_LEN: usize = 32;
-const WIPED_STACK_LEN: usize = 16 * 1024;
+const WIPED_STACK_LEN: usize = 64 * 1024;
 const HHK_LEN: usize = 32;
 const CEK_LEN: usize = 32;
 
