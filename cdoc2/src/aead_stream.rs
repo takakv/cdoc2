@@ -4,6 +4,7 @@ use chacha20::ChaCha20;
 use chacha20::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
 use poly1305::universal_hash::{KeyInit, UniversalHash};
 use poly1305::{Block, Poly1305};
+use zeroize::Zeroize;
 
 pub(crate) const KEY_LEN: usize = 32;
 pub(crate) const NONCE_LEN: usize = 12;
@@ -94,6 +95,7 @@ impl Core {
         let mut mac_key = poly1305::Key::default();
         cipher.apply_keystream(&mut mac_key);
         let mut mac = Poly1305::new(&mac_key);
+        mac_key.zeroize();
         cipher.seek(CHACHA20_BLOCK_LEN);
 
         mac.update_padded(aad);

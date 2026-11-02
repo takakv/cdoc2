@@ -62,7 +62,7 @@ pub(crate) fn generate_fmk() -> Result<Fmk, getrandom::Error> {
 
 fn header_mac(fmk: &[u8; FMK_LEN], header_bytes: &[u8]) -> Hmac {
     let hhk = derive_hhk(fmk);
-    let mut mac = Hmac::new_from_slice(&hhk).expect("HMAC should accept keys of any size");
+    let mut mac = Hmac::new_from_slice(&hhk[..]).expect("HMAC should accept keys of any size");
     mac.update(header_bytes);
     mac
 }
@@ -104,18 +104,18 @@ pub(crate) fn authenticate_header<'a>(
     })
 }
 
-fn derive_hhk(fmk: &[u8; FMK_LEN]) -> [u8; HHK_LEN] {
+fn derive_hhk(fmk: &[u8; FMK_LEN]) -> Zeroizing<[u8; HHK_LEN]> {
     expand_fmk(fmk, b"CDOC20hmac")
 }
 
-pub(crate) fn derive_cek(fmk: &[u8; FMK_LEN]) -> [u8; CEK_LEN] {
+pub(crate) fn derive_cek(fmk: &[u8; FMK_LEN]) -> Zeroizing<[u8; CEK_LEN]> {
     expand_fmk(fmk, b"CDOC20cek")
 }
 
-fn expand_fmk<const N: usize>(fmk: &[u8; FMK_LEN], info: &[u8]) -> [u8; N] {
-    let mut key = [0u8; N];
+fn expand_fmk<const N: usize>(fmk: &[u8; FMK_LEN], info: &[u8]) -> Zeroizing<[u8; N]> {
+    let mut key = Zeroizing::new([0u8; N]);
     let hk = Hkdf::from_prk(fmk).expect("FMK should be long enough to be an HKDF PRK");
-    hk.expand(info, &mut key)
+    hk.expand(info, &mut key[..])
         .expect("key should be short enough for HKDF-Expand");
     key
 }
