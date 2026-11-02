@@ -14,7 +14,7 @@ use crate::header::RecipientRecord;
 pub fn decrypt_into_unverified(
     head: &ContainerHead,
     record: &RecipientRecord,
-    key: &DecryptionKey,
+    key: DecryptionKey,
     payload: impl Read,
     options: DecryptOptions,
     sink: &mut impl Sink,
@@ -25,7 +25,7 @@ pub fn decrypt_into_unverified(
 fn decrypt_with_keys(
     head: &ContainerHead,
     record: &RecipientRecord,
-    key: &DecryptionKey,
+    key: DecryptionKey,
     payload: impl Read,
     options: DecryptOptions,
     sink: &mut impl Sink,

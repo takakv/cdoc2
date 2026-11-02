@@ -127,7 +127,7 @@ fn round_trip() {
     let decrypted = decrypt(
         &container,
         &fetched,
-        &DecryptionKey::EcSecretKey(&key),
+        DecryptionKey::EcSecretKey(&key),
         DecryptOptions::default(),
     );
     assert_eq!(decrypted, Ok(files()));

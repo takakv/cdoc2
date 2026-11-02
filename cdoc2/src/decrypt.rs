@@ -65,7 +65,7 @@ impl Default for DecryptOptions {
 pub fn decrypt(
     container: &Container,
     record: &RecipientRecord,
-    key: &DecryptionKey,
+    key: DecryptionKey,
     options: DecryptOptions,
 ) -> Result<Vec<File>, DecryptError> {
     let mut files = Vec::new();
@@ -83,7 +83,7 @@ pub fn decrypt(
 pub fn decrypt_into(
     head: &ContainerHead,
     record: &RecipientRecord,
-    key: &DecryptionKey,
+    key: DecryptionKey,
     payload: impl Read + Seek,
     options: DecryptOptions,
     sink: &mut impl Sink,
@@ -94,7 +94,7 @@ pub fn decrypt_into(
 fn decrypt_with_keys(
     head: &ContainerHead,
     record: &RecipientRecord,
-    key: &DecryptionKey,
+    key: DecryptionKey,
     mut payload: impl Read + Seek,
     options: DecryptOptions,
     sink: &mut impl Sink,
@@ -121,7 +121,7 @@ pub(crate) fn decrypt_payload(
 pub(crate) fn authenticate<'a>(
     head: &'a ContainerHead,
     record: &RecipientRecord,
-    key: &DecryptionKey,
+    key: DecryptionKey,
     options: DecryptOptions,
 ) -> Result<AuthenticatedHeader<'a>, DecryptError> {
     check_encryption_methods(head, record)?;
@@ -139,10 +139,10 @@ pub(crate) fn authenticate<'a>(
 
 fn derive_kek(
     record: &RecipientRecord,
-    key: &DecryptionKey,
+    key: DecryptionKey,
     options: DecryptOptions,
 ) -> Result<Kek, DecryptError> {
-    match (&record.capsule, *key) {
+    match (&record.capsule, key) {
         (Capsule::Symmetric(capsule), DecryptionKey::Symmetric(key)) => {
             Ok(capsule.derive_kek(key, &record.key_label))
         }
