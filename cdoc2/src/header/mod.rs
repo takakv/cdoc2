@@ -24,6 +24,7 @@ pub struct RecipientRecord {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub enum RecipientId<'a> {
     EcPublicKey(&'a EcPublicKey),
     Symmetric { label: &'a str },
@@ -47,6 +48,7 @@ pub(crate) enum PayloadEncryptionMethod {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum HeaderError {
     #[error("malformed header: {0}")]
     Malformed(String),

@@ -6,6 +6,7 @@ use crate::crypto::{AuthenticatedHeader, FMK_LEN, HMAC_LEN, derive_cek};
 use crate::header::{Header, PayloadEncryptionMethod};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum PayloadError {
     #[error("unsupported payload encryption method")]
     UnsupportedPayloadEncryptionMethod,

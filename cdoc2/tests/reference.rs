@@ -38,10 +38,8 @@ fn password() {
 fn password_iteration_cap() {
     let container = Container::parse(include_bytes!("data/ref-password.cdoc2")).unwrap();
     let record = &container.head.header.recipients[0];
-    let options = DecryptOptions {
-        max_kdf_iterations: 599_999,
-        ..Default::default()
-    };
+    let mut options = DecryptOptions::default();
+    options.max_kdf_iterations = 599_999;
     let key = DecryptionKey::Password("Salasõna123");
     assert_eq!(
         decrypt(&container, record, key, options),

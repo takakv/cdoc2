@@ -22,6 +22,7 @@ pub struct Container<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum ContainerError {
     #[error("not a CDOC2 container")]
     NotCdoc2,

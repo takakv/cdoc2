@@ -58,6 +58,7 @@ impl Sink for Vec<File> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum UnpackError {
     #[error("malformed archive: {0}")]
     Malformed(String),
@@ -72,6 +73,7 @@ pub enum UnpackError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum FileNameError {
     #[error("file name {0:?} is not allowed")]
     Unsafe(String),

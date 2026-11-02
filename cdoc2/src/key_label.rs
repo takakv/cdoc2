@@ -33,6 +33,7 @@ pub fn public_key(file: &str, label: Option<&str>) -> String {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum EidType {
     IdCard,
     DigiId,

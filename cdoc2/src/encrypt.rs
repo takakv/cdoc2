@@ -51,6 +51,7 @@ impl Recipient<'_> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum EncryptError {
     #[error("at least one recipient is required")]
     NoRecipients,

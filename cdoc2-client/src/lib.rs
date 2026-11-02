@@ -35,6 +35,7 @@ impl KeyServer {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error(transparent)]
     Encrypt(#[from] EncryptError),

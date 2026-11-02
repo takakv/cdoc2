@@ -31,6 +31,7 @@ impl NistCurve for p521::NistP521 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum EccKekError {
     #[error("the key is not on the recipient's curve")]
     CurveMismatch,

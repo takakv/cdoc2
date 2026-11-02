@@ -14,6 +14,7 @@ const ALG_ID: &str = "XOR";
 pub(crate) const SALT_LEN: usize = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Capsule {
     Symmetric(SymmetricKeyCapsule),
     Password(Pbkdf2Capsule),

@@ -12,6 +12,7 @@ use crate::payload::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum DecryptError {
     #[error("key type does not match the recipient's capsule type")]
     KeyTypeMismatch,
@@ -47,6 +48,7 @@ pub enum DecryptionKey<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DecryptOptions {
     /// The most bytes the decompressed archive may hold.
     pub max_decompressed_size: u64,

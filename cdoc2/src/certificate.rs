@@ -12,6 +12,7 @@ use crate::key_label::{self, CertLabel, EidLabel, EidType};
 use crate::keys::EcPublicKey;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CertificateKey {
     pub public_key: EcPublicKey,
     pub key_label: String,
@@ -19,6 +20,7 @@ pub struct CertificateKey {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum CertificateError {
     #[error("not an X.509 certificate")]
     Invalid,
