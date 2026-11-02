@@ -130,7 +130,10 @@ impl Sink for Recorder {
     }
 }
 
-fn decrypt_recorded(container: &[u8], max_size: u64) -> (Result<(), DecryptError>, Recorder) {
+fn decrypt_recorded(
+    container: &[u8],
+    max_decompressed_size: u64,
+) -> (Result<(), DecryptError>, Recorder) {
     let mut reader = Cursor::new(container);
     let head = ContainerHead::read(&mut reader).unwrap();
     let mut recorder = Recorder::default();
@@ -140,7 +143,7 @@ fn decrypt_recorded(container: &[u8], max_size: u64) -> (Result<(), DecryptError
         &DecryptionKey::Symmetric(KEY),
         reader,
         DecryptOptions {
-            max_size,
+            max_decompressed_size,
             ..Default::default()
         },
         &mut recorder,
@@ -160,6 +163,23 @@ fn sink_gets_sizes_and_ends() {
         assert_eq!(recorded.data, file.data);
         assert!(recorded.finished);
     }
+}
+
+#[test]
+fn size_limit_counts_tar_headers() {
+    let files = [File {
+        name: "a.txt".into(),
+        data: b"lorem ipsum".to_vec(),
+    }];
+    let decompressed_size = 4 * 512;
+    let container = encrypt_files(&files);
+    assert_eq!(decrypt_recorded(&container, decompressed_size).0, Ok(()));
+    assert_eq!(
+        decrypt_recorded(&container, decompressed_size - 1).0,
+        Err(DecryptError::Unpack(UnpackError::TooLarge(
+            decompressed_size - 1
+        )))
+    );
 }
 
 #[test]

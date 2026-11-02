@@ -31,5 +31,5 @@ fn decrypt_with_keys(
     sink: &mut impl Sink,
 ) -> Result<(), DecryptError> {
     let header = authenticate(head, record, key, options)?;
-    decrypt_payload(&header, payload, options.max_size, sink)
+    decrypt_payload(&header, payload, options.max_decompressed_size, sink)
 }

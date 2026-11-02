@@ -61,7 +61,7 @@ impl Sink for Vec<File> {
 pub enum UnpackError {
     #[error("malformed archive: {0}")]
     Malformed(String),
-    #[error("unpacked data exceeds the {0}-byte limit")]
+    #[error("the decompressed archive exceeds the {0}-byte limit")]
     TooLarge(u64),
     #[error("archive entry {name:?} is not a regular file (tar type {entry_type:?})")]
     UnsupportedEntryType { name: String, entry_type: char },

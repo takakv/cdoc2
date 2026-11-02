@@ -48,14 +48,15 @@ pub enum DecryptionKey<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DecryptOptions {
-    pub max_size: u64,
+    /// The most bytes the decompressed archive may hold.
+    pub max_decompressed_size: u64,
     pub max_kdf_iterations: u32,
 }
 
 impl Default for DecryptOptions {
     fn default() -> Self {
         DecryptOptions {
-            max_size: u64::MAX,
+            max_decompressed_size: u64::MAX,
             max_kdf_iterations: 10_000_000,
         }
     }
@@ -100,17 +101,17 @@ fn decrypt_with_keys(
 ) -> Result<(), DecryptError> {
     let header = authenticate(head, record, key, options)?;
     verify_payload(&header, &mut payload)?;
-    decrypt_payload(&header, payload, options.max_size, sink)
+    decrypt_payload(&header, payload, options.max_decompressed_size, sink)
 }
 
 pub(crate) fn decrypt_payload(
     header: &AuthenticatedHeader,
     payload: impl Read,
-    max_size: u64,
+    max_decompressed_size: u64,
     sink: &mut impl Sink,
 ) -> Result<(), DecryptError> {
     let mut payload = PayloadReader::new(header, payload)?;
-    let unpacked = archive::unpack(&mut payload, max_size, sink);
+    let unpacked = archive::unpack(&mut payload, max_decompressed_size, sink);
     // The payload may be unverified, or may have changed since it was verified, so the tag
     // must take priority over unpacking errors.
     payload.finish()?;

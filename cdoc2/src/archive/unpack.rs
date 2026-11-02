@@ -12,20 +12,21 @@ pub(super) const MAX_ENTRY_HEADERS_SIZE: u64 = 64 * 1024;
 
 pub(crate) fn unpack(
     compressed: impl Read,
-    max_size: u64,
+    max_decompressed_size: u64,
     sink: &mut impl Sink,
 ) -> Result<(), UnpackError> {
-    let mut reader = ZlibDecoder::new(BufReader::new(compressed)).take(max_size.saturating_add(1));
-    let result = unpack_limited(&mut reader, max_size, sink);
+    let mut reader =
+        ZlibDecoder::new(BufReader::new(compressed)).take(max_decompressed_size.saturating_add(1));
+    let result = unpack_limited(&mut reader, max_decompressed_size, sink);
     if reader.limit() == 0 {
-        return Err(UnpackError::TooLarge(max_size));
+        return Err(UnpackError::TooLarge(max_decompressed_size));
     }
     result
 }
 
 fn unpack_limited(
     reader: &mut Take<ZlibDecoder<impl BufRead>>,
-    max_size: u64,
+    max_decompressed_size: u64,
     sink: &mut impl Sink,
 ) -> Result<(), UnpackError> {
     let headers_budget = Cell::new(0);
@@ -36,7 +37,7 @@ fn unpack_limited(
     read_files(
         &mut tar::Archive::new(limited),
         &headers_budget,
-        max_size,
+        max_decompressed_size,
         sink,
     )?;
 
@@ -62,7 +63,7 @@ fn unpack_limited(
 fn read_files(
     archive: &mut tar::Archive<impl Read>,
     headers_budget: &Cell<u64>,
-    max_size: u64,
+    max_decompressed_size: u64,
     sink: &mut impl Sink,
 ) -> Result<(), UnpackError> {
     let mut names = HashSet::new();
@@ -100,8 +101,8 @@ fn read_files(
 
         let size = entry.size();
         total_size = total_size.saturating_add(size);
-        if total_size > max_size {
-            return Err(UnpackError::TooLarge(max_size));
+        if total_size > max_decompressed_size {
+            return Err(UnpackError::TooLarge(max_decompressed_size));
         }
 
         sink.create_file(&name, size).map_err(write_error)?;
