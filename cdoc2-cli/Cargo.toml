@@ -5,6 +5,7 @@ description = "Command-line tool for CDOC2 encrypted document containers"
 keywords = ["cdoc2", "cdoc", "encryption", "eid", "estonia"]
 categories = ["cryptography", "command-line-utilities"]
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true

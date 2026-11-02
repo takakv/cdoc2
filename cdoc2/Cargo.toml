@@ -6,6 +6,7 @@ readme = "../README.md"
 keywords = ["cdoc2", "cdoc", "encryption", "eid", "estonia"]
 categories = ["cryptography"]
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
