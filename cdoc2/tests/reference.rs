@@ -57,7 +57,8 @@ fn ec_key() {
     let pem = include_str!("data/ref-ec-key.pem");
     let key = EcSecretKey::P384(p384::SecretKey::from_sec1_pem(pem).unwrap());
     let container = include_bytes!("data/ref-ec.cdoc2");
-    let id = RecipientId::EcPublicKey(&key.public_key());
+    let public_key = key.public_key();
+    let id = RecipientId::EcPublicKey(&public_key);
     let files = decrypt_reference_container(container, id, DecryptionKey::EcSecretKey(&key));
     assert_eq!(files, lorem_ipsum());
 }
