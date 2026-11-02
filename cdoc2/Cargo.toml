@@ -17,7 +17,7 @@ chacha20 = { version = "0.10.2", default-features = false, features = ["cipher",
 # NB! ChaCha20 does not wipe its keystream buffer without this import.
 cipher = { version = "0.5.2", default-features = false, features = ["zeroize"] }
 derive_more = { version = "2.1.1", default-features = false, features = ["debug"] }
-elliptic-curve = { version = "0.14.1", default-features = false, features = ["ecdh", "getrandom", "sec1"] }
+elliptic-curve = { version = "0.14.3", default-features = false, features = ["ecdh", "getrandom", "sec1"] }
 flatbuffers = "25.12.19"
 flate2 = "1.1.10"
 form_urlencoded = "1"
