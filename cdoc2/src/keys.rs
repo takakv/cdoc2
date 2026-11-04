@@ -1,5 +1,7 @@
 use elliptic_curve::sec1::ToSec1Point;
 
+pub use {p256, p384, p521};
+
 use crate::crypto::with_wiped_stack;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
