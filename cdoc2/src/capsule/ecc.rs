@@ -7,7 +7,7 @@ use zeroize::Zeroizing;
 use crate::capsule::{Capsule, encrypt_fmk, expand_kek};
 use crate::crypto::{FMK_LEN, Hkdf, Kek};
 use crate::header::RecipientRecord;
-use crate::keys::{EcPublicKey, EcSecretKey, EcdhKey, EllipticCurve};
+use crate::keys::{EcPublicKey, EcSecretKey, EcdhError, EcdhKey, EllipticCurve};
 
 const UNCOMPRESSED_POINT_TAG: u8 = 0x04;
 
@@ -40,7 +40,7 @@ pub enum EccKekError {
     #[error("the shared secret has the wrong length for the curve: {0} bytes")]
     InvalidSharedSecretLength(usize),
     #[error("the key could not compute ECDH: {0}")]
-    Ecdh(String),
+    Ecdh(EcdhError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,8 +102,10 @@ impl EccPublicKeyCapsule {
         if key.curve() != self.curve {
             return Err(EccKekError::CurveMismatch);
         }
-        let shared_secret =
-            Zeroizing::new(key.ecdh(&self.sender_key()?).map_err(EccKekError::Ecdh)?);
+        let shared_secret = Zeroizing::new(
+            key.ecdh(&self.sender_key()?)
+                .map_err(|e| EccKekError::Ecdh(e.into()))?,
+        );
         if shared_secret.len() != shared_secret_len(self.curve) {
             return Err(EccKekError::InvalidSharedSecretLength(shared_secret.len()));
         }

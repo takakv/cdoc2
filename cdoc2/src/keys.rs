@@ -1,3 +1,6 @@
+use std::error::Error;
+use std::sync::Arc;
+
 use elliptic_curve::sec1::ToSec1Point;
 
 pub use {p256, p384, p521};
@@ -14,8 +17,35 @@ pub enum EllipticCurve {
 /// A private key that computes ECDH itself, e.g. an ID card private key.
 pub trait EcdhKey {
     fn curve(&self) -> EllipticCurve;
-    fn ecdh(&self, sender_public_key: &EcPublicKey) -> Result<Vec<u8>, String>;
+    fn ecdh(
+        &self,
+        sender_public_key: &EcPublicKey,
+    ) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>>;
 }
+
+#[derive(Debug, Clone, thiserror::Error)]
+#[error(transparent)]
+pub struct EcdhError(Arc<dyn Error + Send + Sync>);
+
+impl EcdhError {
+    pub fn get_ref(&self) -> &(dyn Error + Send + Sync + 'static) {
+        &*self.0
+    }
+}
+
+impl From<Box<dyn Error + Send + Sync>> for EcdhError {
+    fn from(error: Box<dyn Error + Send + Sync>) -> Self {
+        EcdhError(error.into())
+    }
+}
+
+impl PartialEq for EcdhError {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_string() == other.0.to_string()
+    }
+}
+
+impl Eq for EcdhError {}
 
 #[derive(Debug, Clone)]
 pub enum EcSecretKey {

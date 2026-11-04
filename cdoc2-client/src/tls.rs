@@ -1,10 +1,11 @@
+use std::error::Error as StdError;
 use std::fmt::Debug;
 use std::sync::Arc;
 
 use rustls::client::ResolvesClientCert;
 use rustls::pki_types::CertificateDer;
 use rustls::sign::{CertifiedKey, Signer, SigningKey};
-use rustls::{ClientConfig, SignatureAlgorithm, SignatureScheme};
+use rustls::{ClientConfig, OtherError, SignatureAlgorithm, SignatureScheme};
 use rustls_platform_verifier::BuilderVerifierExt;
 
 use cdoc2::keys::EllipticCurve;
@@ -13,7 +14,7 @@ use crate::Error;
 
 pub trait EcdsaSigner: Debug + Send + Sync {
     fn curve(&self) -> EllipticCurve;
-    fn sign(&self, message: &[u8]) -> Result<Vec<u8>, String>;
+    fn sign(&self, message: &[u8]) -> Result<Vec<u8>, Box<dyn StdError + Send + Sync>>;
 }
 
 pub struct TlsIdentity(Arc<CertifiedKey>);
@@ -78,7 +79,10 @@ impl SigningKey for EcdsaKey {
 
 impl Signer for EcdsaKey {
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::Error> {
-        let signature = self.0.sign(message).map_err(rustls::Error::General)?;
+        let signature = self
+            .0
+            .sign(message)
+            .map_err(|e| rustls::Error::Other(OtherError(e.into())))?;
         der_signature(self.0.curve(), &signature)
             .ok_or_else(|| rustls::Error::General("the signature has the wrong length".into()))
     }

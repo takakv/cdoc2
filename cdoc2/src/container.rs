@@ -16,6 +16,7 @@ pub struct ContainerHead {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Container<'a> {
     pub head: ContainerHead,
     pub payload: &'a [u8],

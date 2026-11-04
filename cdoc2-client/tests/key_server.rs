@@ -75,7 +75,7 @@ impl EcdsaSigner for UnusedSigner {
         EllipticCurve::Secp384r1
     }
 
-    fn sign(&self, _: &[u8]) -> Result<Vec<u8>, String> {
+    fn sign(&self, _: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
         Err("unused".into())
     }
 }
