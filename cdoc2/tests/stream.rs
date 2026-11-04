@@ -47,7 +47,7 @@ fn decrypt_files(container: &[u8]) -> (Result<(), DecryptError>, Vec<File>) {
         &head.header.recipients[0],
         DecryptionKey::Symmetric(KEY),
         reader,
-        DecryptOptions::default(),
+        DecryptOptions::new(u64::MAX),
         &mut files,
     );
     (result, files)
@@ -137,8 +137,7 @@ fn decrypt_recorded(
     let mut reader = Cursor::new(container);
     let head = ContainerHead::read(&mut reader).unwrap();
     let mut recorder = Recorder::default();
-    let mut options = DecryptOptions::default();
-    options.max_decompressed_size = max_decompressed_size;
+    let options = DecryptOptions::new(max_decompressed_size);
     let result = decrypt_into(
         &head,
         &head.header.recipients[0],

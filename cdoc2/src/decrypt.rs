@@ -50,15 +50,15 @@ pub enum DecryptionKey<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct DecryptOptions {
-    /// The most bytes the decompressed archive may hold.
+    /// The most bytes the decompressed archive may hold, counting tar headers and padding.
     pub max_decompressed_size: u64,
     pub max_kdf_iterations: u32,
 }
 
-impl Default for DecryptOptions {
-    fn default() -> Self {
+impl DecryptOptions {
+    pub fn new(max_decompressed_size: u64) -> Self {
         DecryptOptions {
-            max_decompressed_size: u64::MAX,
+            max_decompressed_size,
             max_kdf_iterations: 10_000_000,
         }
     }

@@ -8,7 +8,7 @@ use cdoc2::keys::EcSecretKey;
 fn decrypt_reference_container(bytes: &[u8], id: RecipientId, key: DecryptionKey) -> Vec<File> {
     let container = Container::parse(bytes).unwrap();
     let record = container.head.header.find_recipient(id).unwrap();
-    decrypt(&container, record, key, DecryptOptions::default()).unwrap()
+    decrypt(&container, record, key, DecryptOptions::new(u64::MAX)).unwrap()
 }
 
 fn lorem_ipsum() -> Vec<File> {
@@ -38,7 +38,7 @@ fn password() {
 fn password_iteration_cap() {
     let container = Container::parse(include_bytes!("data/ref-password.cdoc2")).unwrap();
     let record = &container.head.header.recipients[0];
-    let mut options = DecryptOptions::default();
+    let mut options = DecryptOptions::new(u64::MAX);
     options.max_kdf_iterations = 599_999;
     let key = DecryptionKey::Password("Salasõna123");
     assert_eq!(
@@ -73,7 +73,7 @@ fn rsa_public_key() {
         &container,
         record,
         DecryptionKey::Symmetric(&[1; 32]),
-        DecryptOptions::default(),
+        DecryptOptions::new(u64::MAX),
     );
     assert_eq!(decrypted, Err(DecryptError::UnsupportedCapsule));
 }

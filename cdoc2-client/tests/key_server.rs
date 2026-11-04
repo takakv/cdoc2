@@ -128,7 +128,7 @@ fn round_trip() {
         &container,
         &fetched,
         DecryptionKey::EcSecretKey(&key),
-        DecryptOptions::default(),
+        DecryptOptions::new(u64::MAX),
     );
     assert_eq!(decrypted, Ok(files()));
 
