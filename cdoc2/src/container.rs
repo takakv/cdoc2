@@ -1,3 +1,5 @@
+//! Reading containers.
+
 use std::io::{self, Read};
 
 use crate::IoError;
@@ -8,13 +10,16 @@ const PRELUDE: &[u8; 4] = b"CDOC";
 const VERSION: u8 = 2;
 const MAX_HEADER_LEN: usize = 1 << 20;
 
+/// The part of a container before the payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainerHead {
+    /// The parsed header. It isn't authenticated until decryption checks its HMAC.
     pub header: Header,
     pub(crate) header_bytes: Vec<u8>,
     pub(crate) header_hmac: [u8; HMAC_LEN],
 }
 
+/// A container held in memory.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct Container<'a> {
@@ -22,24 +27,38 @@ pub struct Container<'a> {
     pub payload: &'a [u8],
 }
 
+/// An error reading a container's head.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ContainerError {
+    /// The data doesn't start with `CDOC`.
     #[error("not a CDOC2 container")]
     NotCdoc2,
+    /// The version byte isn't 2.
     #[error("unsupported CDOC version: {0}")]
     UnsupportedVersion(u8),
+    /// The header length is negative or larger than 1 MiB.
     #[error("invalid header length")]
     InvalidHeaderLength,
+    /// The data ends partway through the head.
     #[error("container is truncated")]
     Truncated,
+    /// The reader returned an error.
     #[error("cannot read container: {0}")]
     Read(IoError),
+    /// The header can't be parsed.
     #[error(transparent)]
     Header(#[from] HeaderError),
 }
 
 impl ContainerHead {
+    /// Reads a container's head from `reader`.
+    ///
+    /// Leaves `reader` at the start of the payload.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `reader` fails, or the data doesn't start with a valid container head.
     pub fn read(reader: &mut impl Read) -> Result<Self, ContainerError> {
         let mut prelude = Vec::with_capacity(PRELUDE.len());
         reader
@@ -76,6 +95,11 @@ impl ContainerHead {
 }
 
 impl<'a> Container<'a> {
+    /// Parses a container held in memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `bytes` doesn't start with a valid container head.
     pub fn parse(bytes: &'a [u8]) -> Result<Self, ContainerError> {
         let mut payload = bytes;
         let head = ContainerHead::read(&mut payload)?;
