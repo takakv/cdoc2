@@ -1,10 +1,14 @@
+//! Symmetric key recipients.
+
 use crate::capsule::{Capsule, SALT_LEN, derive_symmetric_kek, encrypt_fmk};
 use crate::crypto::{FMK_LEN, Kek, random_bytes};
 use crate::header::RecipientRecord;
 
+/// The capsule of a symmetric key recipient.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct SymmetricKeyCapsule {
+    /// The salt for deriving a key from the recipient's key with HKDF.
     pub salt: Vec<u8>,
 }
 

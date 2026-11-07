@@ -1,3 +1,5 @@
+//! Key capsules.
+
 pub mod ecc;
 pub mod key_server;
 pub mod password;
@@ -13,30 +15,42 @@ use crate::crypto::{FMK_LEN, Fmk, Hkdf, KEK_LEN, Kek};
 const ALG_ID: &str = "XOR";
 pub(crate) const SALT_LEN: usize = 32;
 
+/// A recipient's capsule, by the kind of key the recipient has.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Capsule {
+    /// A symmetric key.
     Symmetric(SymmetricKeyCapsule),
+    /// A password.
     Password(Pbkdf2Capsule),
+    /// An EC private key.
     Ecc(EccPublicKeyCapsule),
+    /// An EC private key, with the sender's public key kept on a key server.
     KeyServer(KeyServerCapsule),
+    /// A kind of recipient that this crate can't decrypt for.
     Unsupported(UnsupportedCapsule),
 }
 
+/// A capsule that this crate can read but not decrypt.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum UnsupportedCapsule {
+    /// An RSA recipient.
     RsaPublicKey {
+        /// The recipient's public key, as DER-encoded PKCS#1.
         recipient_public_key: Vec<u8>,
     },
+    /// An RSA recipient, with the encrypted key material kept on a key server.
     RsaKeyServer {
+        /// The recipient's public key, as DER-encoded PKCS#1.
         recipient_public_key: Vec<u8>,
         keyserver_id: String,
+        /// The capsule's ID on the key server.
         transaction_id: String,
     },
-    KeyShares {
-        recipient_id: String,
-    },
+    /// Smart-ID or Mobile-ID, with the key split into shares on several servers.
+    KeyShares { recipient_id: String },
+    /// A capsule type that this crate doesn't recognize.
     Unknown,
 }
 

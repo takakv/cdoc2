@@ -1,3 +1,5 @@
+//! EC recipients.
+
 use elliptic_curve::array::typenum::Unsigned;
 use elliptic_curve::ecdh::{EphemeralSecret, diffie_hellman};
 use elliptic_curve::sec1::{FromSec1Point, ModulusSize, ToSec1Point};
@@ -30,23 +32,30 @@ impl NistCurve for p521::NistP521 {
     const CURVE: EllipticCurve = EllipticCurve::Secp521r1;
 }
 
+/// An error decrypting with an EC key.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum EccKekError {
+    /// The key is on a different curve from the recipient's.
     #[error("the key is not on the recipient's curve")]
     CurveMismatch,
+    /// The sender's public key in the capsule isn't an uncompressed point on the curve.
     #[error("the sender's public key is invalid")]
     InvalidSenderKey,
+    /// An [`EcdhKey`] returned a shared secret of the wrong length for the curve.
     #[error("the shared secret has the wrong length for the curve: {0} bytes")]
     InvalidSharedSecretLength(usize),
+    /// An [`EcdhKey`] returned an error.
     #[error("the key could not compute ECDH: {0}")]
     Ecdh(EcdhError),
 }
 
+/// The capsule of an EC recipient.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct EccPublicKeyCapsule {
     pub curve: EllipticCurve,
+    /// The recipient's public key, as an uncompressed SEC1 point.
     pub recipient_public_key: Vec<u8>,
     pub(crate) sender_public_key: Vec<u8>,
 }

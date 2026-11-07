@@ -1,3 +1,5 @@
+//! Password recipients.
+
 use pbkdf2::pbkdf2_hmac_array;
 
 use crate::capsule::{Capsule, SALT_LEN, derive_symmetric_kek, encrypt_fmk};
@@ -9,11 +11,16 @@ const PASSWORD_KEY_LEN: usize = 32;
 
 type Pbkdf2Hash = sha2::Sha256;
 
+/// The capsule of a password recipient.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Pbkdf2Capsule {
+    /// The HKDF salt.
     pub salt: Vec<u8>,
+    /// The PBKDF2 salt.
     pub password_salt: Vec<u8>,
+    /// The number of PBKDF2 iterations. Decryption refuses more than
+    /// [`DecryptOptions::max_kdf_iterations`](crate::decrypt::DecryptOptions::max_kdf_iterations).
     pub kdf_iterations: u32,
 }
 
