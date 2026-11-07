@@ -92,6 +92,7 @@ enum PreparedRecord {
 }
 
 pub fn encrypt(files: &[File], recipients: &[Recipient]) -> Result<Vec<u8>, EncryptError> {
+    reject_key_server(recipients)?;
     prepare(recipients)?.encrypt(files)
 }
 
@@ -103,7 +104,17 @@ pub fn encrypt_into<R: Read>(
     recipients: &[Recipient],
     out: impl Write,
 ) -> Result<(), EncryptError> {
+    reject_key_server(recipients)?;
     prepare(recipients)?.encrypt_into(files, open, out)
+}
+
+fn reject_key_server(recipients: &[Recipient]) -> Result<(), EncryptError> {
+    for recipient in recipients {
+        if let Recipient::KeyServer { key_label, .. } = recipient {
+            return Err(EncryptError::CapsuleNotUploaded((*key_label).to_owned()));
+        }
+    }
+    Ok(())
 }
 
 /// Generates the key material for every recipient.
