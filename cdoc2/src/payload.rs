@@ -1,3 +1,5 @@
+//! The encrypted payload.
+
 use std::io::{self, Read, Seek, SeekFrom, Write};
 
 use crate::IoError;
@@ -5,15 +7,20 @@ use crate::aead_stream::{AeadError, Decryptor, Encryptor, NONCE_LEN, TAG_LEN, Ve
 use crate::crypto::{AuthenticatedHeader, FMK_LEN, HMAC_LEN, derive_cek};
 use crate::header::{Header, PayloadEncryptionMethod};
 
+/// An error reading the encrypted payload.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum PayloadError {
+    /// The header names a payload cipher other than ChaCha20-Poly1305.
     #[error("unsupported payload encryption method")]
     UnsupportedPayloadEncryptionMethod,
+    /// The payload is shorter than its nonce and authentication tag.
     #[error("payload is too short")]
     TooShort,
+    /// The payload was changed or corrupted.
     #[error("payload decryption failed: corrupted or tampered payload")]
     DecryptionFailed,
+    /// Reading or seeking the payload failed.
     #[error("cannot read payload: {0}")]
     Read(IoError),
 }
