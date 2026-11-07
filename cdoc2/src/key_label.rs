@@ -1,14 +1,23 @@
+//! Key labels.
+//!
+//! See [KeyLabel field specification] in the spec for the fields.
+//!
+//! [KeyLabel field specification]: https://open-eid.github.io/CDOC2/2.0/02_protocol_and_cryptography_spec/keylabel_field/
+
 use std::borrow::Cow;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 
+/// A parsed structured key label.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyLabel {
     fields: Vec<(String, String)>,
 }
 
 impl KeyLabel {
+    /// Returns the value of the field `name`, ignoring ASCII case. If the field appears more
+    /// than once, returns the first value.
     pub fn field(&self, name: &str) -> Option<&str> {
         self.fields
             .iter()
@@ -17,14 +26,17 @@ impl KeyLabel {
     }
 }
 
+/// Builds the label of a symmetric key recipient.
 pub fn symmetric(label: &str) -> String {
     structured("secret", &[("label", label)])
 }
 
+/// Builds the label of a password recipient.
 pub fn password(label: &str) -> String {
     structured("pw", &[("label", label)])
 }
 
+/// Builds the label of a recipient whose public key was read from `file`.
 pub fn public_key(file: &str, label: Option<&str>) -> String {
     structured(
         "pub_key",
@@ -32,6 +44,7 @@ pub fn public_key(file: &str, label: Option<&str>) -> String {
     )
 }
 
+/// A kind of Estonian eID document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum EidType {
@@ -50,22 +63,29 @@ impl EidType {
     }
 }
 
+/// The fields of an eID recipient's label.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EidLabel<'a> {
     pub eid_type: EidType,
+    /// The certificate subject's common name.
     pub cn: &'a str,
+    /// The certificate subject's serial number.
     pub serial_number: &'a str,
     pub first_name: Option<&'a str>,
     pub last_name: Option<&'a str>,
 }
 
+/// The fields of the label of a recipient whose certificate was read from a file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CertLabel<'a> {
     pub file: &'a str,
+    /// The certificate subject's common name.
     pub cn: Option<&'a str>,
+    /// The SHA-1 hash of the DER-encoded certificate, in lowercase hex.
     pub cert_sha1: Option<&'a str>,
 }
 
+/// Builds the label of an Estonian eID recipient.
 pub fn eid(label: &EidLabel) -> String {
     structured(
         label.eid_type.as_str(),
@@ -78,6 +98,7 @@ pub fn eid(label: &EidLabel) -> String {
     )
 }
 
+/// Builds the label of a recipient whose certificate was read from a file.
 pub fn cert(label: &CertLabel) -> String {
     structured(
         "cert",
@@ -147,6 +168,8 @@ pub fn parse(key_label: &str) -> Option<KeyLabel> {
     Some(label)
 }
 
+/// Returns `true` if `key_label` is `name`, or is a structured label whose `label` field is
+/// `name`.
 pub fn matches(key_label: &str, name: &str) -> bool {
     key_label == name || parse(key_label).is_some_and(|label| label.field("label") == Some(name))
 }
