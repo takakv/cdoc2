@@ -166,9 +166,9 @@ impl Client {
             ));
         }
 
-        Ok(record
-            .with_sender_public_key(sender_public_key)
-            .expect("the record has a key server capsule"))
+        let mut fetched = record.clone();
+        fetched.capsule = Capsule::Ecc(capsule.with_sender_public_key(sender_public_key));
+        Ok(fetched)
     }
 
     fn server(&self, id: &str) -> Result<&KeyServer, Error> {

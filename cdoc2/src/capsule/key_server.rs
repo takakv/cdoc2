@@ -14,6 +14,16 @@ pub struct KeyServerCapsule {
     pub transaction_id: String,
 }
 
+impl KeyServerCapsule {
+    pub fn with_sender_public_key(&self, sender_public_key: Vec<u8>) -> EccPublicKeyCapsule {
+        EccPublicKeyCapsule {
+            curve: self.curve,
+            recipient_public_key: self.recipient_public_key.clone(),
+            sender_public_key,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapsuleUpload {
     key_label: String,
