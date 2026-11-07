@@ -121,6 +121,9 @@ pub(crate) fn with_server_exp(key_label: &str, server_exp: u64) -> String {
     format!("data:,{fields}")
 }
 
+/// Parses a structured key label.
+///
+/// Returns `None` unless the label is a `data:` URL with `v=1` and a `type` field.
 pub fn parse(key_label: &str) -> Option<KeyLabel> {
     let (scheme, rest) = key_label.split_once(':')?;
     if !scheme.eq_ignore_ascii_case("data") {
@@ -137,7 +140,11 @@ pub fn parse(key_label: &str) -> Option<KeyLabel> {
     let fields = form_urlencoded::parse(&data)
         .map(|(name, value)| (name.into_owned(), value.into_owned()))
         .collect();
-    Some(KeyLabel { fields })
+    let label = KeyLabel { fields };
+    if label.field("v") != Some("1") || label.field("type").is_none() {
+        return None;
+    }
+    Some(label)
 }
 
 pub fn matches(key_label: &str, name: &str) -> bool {
